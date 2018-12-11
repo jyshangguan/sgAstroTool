@@ -2,6 +2,296 @@ import datetime
 import numpy as np
 from astropy.io import fits
 
+class GravitySet(object):
+    """
+    A set of gravity data observed at different times.
+    """
+    def __init__(self, gd_list=None, file_list=None, insname=None, dataList=None,
+                 verbose=True):
+        """
+        Parameters
+        ----------
+        gd_list : list (optional)
+            The list of GravityData.  If it is provided, the parameters to read
+            from fits files will be ignored.
+        file_list : list (optional)
+            The list of fits file names.
+        insname : string (optional)
+            The keyword INSNAME that is used to select the data, case free.
+        dataList : list (optional)
+            The list of data keywords to read.
+        verbose : bool, default: True
+            Print notes if True.
+        """
+        if gd_list is None:
+            assert not file_list is None
+            assert not insname is None
+            gd_list = []
+            for filename in file_list:
+                gd_list.append(GravityData(filename=filename, insname=insname, dataList=dataList))
+        else:
+            if verbose & (not ((file_list is None) & (insname is None) & (dataList is None))):
+                print("The gd_list is used so the other parameters are ignored!")
+        self.gd_list = gd_list
+
+    def get_Data_obsdate(self, obsdate, **kwargs):
+        """
+        Get the data according to the obsdate.
+
+        Parameters
+        ----------
+        obsdate : datetime object or string (list)
+            The observation date information to select the data.
+                datetime object -> call get_Data_obsdate_single();
+                y-m-dTh:m:s -> call get_Data_obsdate_single();
+                y-m-d -> call get_Data_obsdate_range() for [y-m-dT12:00:00, y-m-(d+1)T12:00:00].
+                [y1-m1-d1Th1:m1:s1, y2-m2-d2Th2:m2:s2] -> call get_Data_obsdate_range().
+        **kwargs : Additional parameters for get_Data_obsdate_single or get_Data_obsdate_range.
+
+        Returns
+        -------
+        Single or a list of GravityData.
+        """
+        #-> Manage the input
+        #--> If obsdate is a string, first try to convert it to a datetime object.
+        if type(obsdate) == type(datetime.datetime.now()):
+            return self.get_Data_obsdate_single(obsdate, **kwargs)
+        elif type(obsdate) == type("string"):
+            try:
+                obsdate_inp = datetime.datetime.strptime(obsdate, "%Y-%m-%dT%H:%M:%S")
+                get_Data_func = self.get_Data_obsdate_single
+            except:
+                try:
+                    date_list = obsdate.split("T")[0].split("-")
+                    #---> This is following the convention of the our team.
+                    obsdate_s = "{0}-{1}-{2}T12:00:00".format(date_list[0], date_list[1], date_list[2])
+                    obsdate_e = "{0}-{1}-{2}T12:00:00".format(date_list[0], date_list[1], (eval(date_list[2])+1))
+                    obsdate_s = datetime.datetime.strptime(obsdate_s, "%Y-%m-%dT%H:%M:%S")
+                    obsdate_e = datetime.datetime.strptime(obsdate_e, "%Y-%m-%dT%H:%M:%S")
+                    obsdate_inp = [obsdate_s, obsdate_e]
+                    get_Data_func = self.get_Data_obsdate_range
+                except:
+                    error_content = "The input obsdate ({0}) is not managable! The format %Y-%m-%d or %Y-%m-%dT%H:%M:%S is preferred."
+                    raise ValueError(error_content.format(obsdate))
+            return get_Data_func(obsdate_inp, **kwargs)
+        #--> Else, if it is a list, it should contain the strings of the start and end obsdates.
+        elif type(obsdate) == type(["obsdate_start", "obsdate_end"]):
+            assert len(obsdate) == 2
+            assert (type(obsdate[0]) == type("string")) & (type(obsdate[1]) == type("string"))
+            try:
+                obsdate_s = datetime.datetime.strptime(obsdate[0], "%Y-%m-%dT%H:%M:%S")
+                obsdate_e = datetime.datetime.strptime(obsdate[1], "%Y-%m-%dT%H:%M:%S")
+            except:
+                raise ValueError("The date should be in %Y-%m-%dT%H:%M:%S rather than the input one ({0})!".format(obsdate))
+            obsdate_inp = [obsdate_s, obsdate_e]
+            return self.get_Data_obsdate_range(obsdate_inp, **kwargs)
+        else:
+            raise ValueError("The input obsdate ({0}) is not recognized!".format(obsdate))
+
+    def get_Data_obsdate_range(self, obsdate_range, verbose=True):
+        """
+        Get the data observed within the obsdate range.
+
+        Parameters
+        ----------
+        obsdate_range : list of two datetime.datetime
+            The start and end of observation date.  The end obsdate is not included.
+        verbose : bool, default: True
+
+        Returns
+        -------
+        gdList : list
+            A list of GravityData within the obsdate range.
+        """
+        assert len(obsdate_range) == 2
+        obsdateList = np.array(self.get_DataSeries("obsdate", verbose=verbose))
+        fltr = (obsdateList >= obsdate_range[0]) & (obsdateList < obsdate_range[1])
+        gdList = []
+        for obsdate in obsdateList[fltr]:
+            gdList.append(self.get_Data_obsdate(obsdate, nearest=False, verbose=verbose))
+        return gdList
+
+    def get_Data_obsdate_single(self, obsdate, nearest=True, verbose=True):
+        """
+        Get the data of a given obsdate.
+
+        Parameters
+        ----------
+        obsdate : datetime.datetime
+            The observation date.
+        nearest : bool, default: True
+            Allow to return the nearest obsdate, if True.
+        verbose : bool, default: True
+
+        Returns
+        -------
+        gd : GravityData
+        """
+        obsdateList = self.get_DataSeries("obsdate", verbose=verbose)
+        if nearest:
+            idx = np.argmin(np.abs(np.array(obsdateList) - obsdate))
+        else:
+            idx = obsdateList.index(obsdate)
+        gd = self.gd_list[idx]
+        return gd
+
+    def get_gd_list(self):
+        """
+        Get the GravityData list.
+        """
+        return self.gd_list
+
+    def get_DataSeries_flagged(self, datakey="obsdate", verbose=True, **kwargs):
+        """
+        Get the time series of data identified by data_key.
+        """
+        dataList = []
+        for gd in self.gd_list:
+            if datakey == "obsdate":
+                if verbose:
+                    print("No flag is applied (unless I implement the time flag)!")
+                dataList.append(gd.obsdate)
+            elif datakey in gd.get_data_keys():
+                dataList.append(gd.get_data_flagged(datakey, **kwargs))
+            elif datakey in gd.get_qc_keys():
+                if verbose:
+                    print("No flag is applied (unless I implement the time flag)!")
+                dataList.append(gd.get_qc(datakey, **kwargs))
+            else:
+                raise ValueError("Cannot find the data ({0})!".format(datakey))
+        return dataList
+
+    def get_DataSeries(self, datakey="obsdate", verbose=True):
+        """
+        Get the time series of data identified by data_key.
+        """
+        dataList = []
+        for gd in self.gd_list:
+            if datakey == "obsdate":
+                dataList.append(gd.obsdate)
+            elif datakey in gd.get_data_keys():
+                dataList.append(gd.get_data(datakey))
+            elif datakey in gd.get_qc_keys():
+                dataList.append(gd.get_qc(datakey))
+            else:
+                raise ValueError("Cannot find the data ({0})!".format(datakey))
+        return dataList
+
+
+
+
+
+class GravityData(object):
+    """
+    The object of gravity data of a single observation.
+    """
+    def __init__(self, data_dict=None, filename=None, insname=None, dataList=None,
+                 verbose=True):
+        """
+        Parameters
+        ----------
+        data_dict : dict (optional)
+            The dictionary of data obtained from readfits_ins().  If data_dict is
+            provided, the parameters to read from a fits file will be ignored.
+        filename : string (optional)
+            The fits file name.
+        insname : string (optional)
+            The keyword INSNAME that is used to select the data, case free.
+        dataList : list (optional)
+            The list of data keywords to read.
+        verbose : bool, default: True
+            Print notes if True.
+        """
+        #-> Prior properties
+        self.__catglist = ["SINGLE_SCI_VIS", "SINGLE_SCI_P2VMRED"]
+        #-> Read in the fits file data_dict is None
+        if data_dict is None:
+            assert not filename is None
+            assert not insname is None
+            data_dict = readfits_ins(filename, insname, dataList)
+        else:
+            if verbose & (not ((filename is None) & (insname is None) & (dataList is None))):
+                print("The data_dict is used so the other parameters are ignored!")
+        #-> Information from the header
+        header = data_dict["HEADER"]
+        self.header = header
+        #--> Basical information
+        self.catg = header.get("HIERARCH ESO PRO CATG", None)
+        if not self.catg in self.__catglist:
+            raise ValueError("The catg ({0}) has not been tested before!".format(self.catg))
+        self.insname = data_dict["INSNAME"]
+        self.obsdate = datetime.datetime.strptime(header["DATE-OBS"], '%Y-%m-%dT%H:%M:%S')
+        self.object = header["OBJECT"]
+        self.ra=header['RA']
+        self.dec=header['DEC']
+        #-> Get the data
+        if self.catg in ["SINGLE_SCI_VIS"]:
+            self.data = GravityVis(data_dict, verbose=verbose)
+        elif self.catg in ["SINGLE_SCI_P2VMRED"]:
+            self.data = GravityP2VMRED(data_dict, verbose=verbose)
+        else:
+            raise ValueError("The catg ({0}) is not supported!".format(self.catg))
+
+    def get_data_keys(self):
+        """
+        Get the keys of the data_dict.
+        """
+        return self.data.data_dict.keys()
+
+    def get_data(self, keyword):
+        """
+        Get the data identified by the keyword.
+
+        Parameters
+        ----------
+        keyword : string
+            The keyword of the data.
+
+        Returns
+        -------
+        The data array or None if the keyword is not found.
+        """
+        return self.data.get_data(keyword)
+
+    def get_data_flagged(self, keyword, **kwargs):
+        """
+        Get the masked data according to the flag.
+
+        Parameters
+        ----------
+        keyword : string
+            The keyword of the data.
+        **kwargs : Additional parameters for GravityP2VMRED objects.
+
+        Returns
+        -------
+        data_flagged: masked array
+            The masked data array.
+        """
+        return self.data.get_data_flagged(keyword, **kwargs)
+
+    def get_qc_keys(self):
+        """
+        Get the keywords of the qc data.
+        """
+        return self.data.qc_dict.keys()
+
+    def get_qc(self, keyword):
+        """
+        Get the qc data identified by the keyword.
+
+        Parameters
+        ----------
+        keyword : string
+            The keyword of the qc data.
+
+        Returns
+        -------
+        The qc data or None if the keyword is not found.
+        """
+        return self.data.get_qc(keyword)
+
+
 class GravityVis(object):
     """
     The object of gravity visibility data.
@@ -41,11 +331,10 @@ class GravityVis(object):
         if verbose & (not self.catg in self.__catglist):
             print("The catg ({0}) has not been tested before!".format(self.catg))
         self.insname = data_dict["INSNAME"]
-        self.obsdate = datetime.datetime.strptime(header["DATE-OBS"], '%Y-%m-%dT%H:%M:%S')
+        self.obsdate = datetime.datetime.strptime(header["DATE-OBS"], "%Y-%m-%dT%H:%M:%S")
         self.object = header["OBJECT"]
         self.ra=header['RA']
         self.dec=header['DEC']
-        self.insmode = header["INSMODE"].split(",")
         #--> QC data from the header
         tel_code = ["1", "2", "3", "4"] # Telescopy code
         bsl_code = ["12", "13", "14", "23", "24", "34"] # Baseline code
@@ -134,6 +423,16 @@ class GravityVis(object):
     def get_data_flagged(self, keyword):
         """
         Get the masked data according to the flag.
+
+        Parameters
+        ----------
+        keyword : string
+            The keyword of the data.
+
+        Returns
+        -------
+        data_flagged: masked array
+            The masked data array.
         """
         data_array = self.data_dict[keyword]
         kw_flag = "{0}_flag".format(keyword.split("_")[0])
@@ -143,6 +442,21 @@ class GravityVis(object):
         assert data_array.shape == flag.shape
         data_flagged = np.ma.array(data_array, mask=flag)
         return data_flagged
+
+    def get_qc(self, keyword):
+        """
+        Get the qc data identified by the keyword.
+
+        Parameters
+        ----------
+        keyword : string
+            The keyword of the qc data.
+
+        Returns
+        -------
+        The qc data or None if the keyword is not found.
+        """
+        return self.qc_dict.get(keyword, None)
 
 
 class GravityP2VMRED(object):
@@ -184,7 +498,7 @@ class GravityP2VMRED(object):
         if verbose & (not self.catg in self.__catglist):
             print("The catg ({0}) has not been tested before!".format(self.catg))
         self.insname = data_dict["INSNAME"]
-        self.obsdate = datetime.datetime.strptime(header["DATE-OBS"], '%Y-%m-%dT%H:%M:%S')
+        self.obsdate = datetime.datetime.strptime(header["DATE-OBS"], "%Y-%m-%dT%H:%M:%S")
         self.object = header["OBJECT"]
         self.ra=header['RA']
         self.dec=header['DEC']
@@ -261,14 +575,23 @@ class GravityP2VMRED(object):
         """
         return self.data_dict.get(keyword, None)
 
-    def get_data_flagged(self, keyword, kw_flag="vis_rejection_flag", threshold=1):
+    def get_data_flagged(self, keyword, kw_flag="vis_rejection_flag", threshold=1.):
         """
         Get the masked data according to the rejection flag.
 
         Parameters
         ----------
         keyword : string
-            The keyword of the data.  It could be vis and flux data.
+            The keyword of the data.
+        kw_flag : string, default: vis_rejection_flag
+            The keyword of the flag.
+        threshold : float, default: 1.
+            The threshold above which the data are flagged.
+
+        Returns
+        -------
+        data_flagged: masked array
+            The masked data array.
         """
         data_array = self.get_data(keyword)
         if data_array is None:
@@ -287,6 +610,21 @@ class GravityP2VMRED(object):
             raise ValueError("The data shape ({0}) is wrong!".format(dshape))
         data_flagged = np.ma.array(data_array, mask=mask)
         return data_flagged
+
+    def get_qc(self, keyword):
+        """
+        Get the qc data identified by the keyword.
+
+        Parameters
+        ----------
+        keyword : string
+            The keyword of the qc data.
+
+        Returns
+        -------
+        The qc data or None if the keyword is not found.
+        """
+        return self.qc_dict.get(keyword, None)
 
 
 
