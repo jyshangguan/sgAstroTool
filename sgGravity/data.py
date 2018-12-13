@@ -141,12 +141,16 @@ class GravitySet(object):
         """
         return self.gd_list
 
-    def get_DataSeries_flagged(self, datakey="obsdate", verbose=True, **kwargs):
+    def get_DataSeries_flagged(self, datakey="obsdate", obsdate=None, verbose=True, **kwargs):
         """
         Get the time series of data identified by data_key.
         """
+        if obsdate is None:
+            gd_list = self.gd_list
+        else:
+            gd_list = self.get_Data_obsdate(obsdate)
         dataList = []
-        for gd in self.gd_list:
+        for gd in gd_list:
             if datakey == "obsdate":
                 if verbose:
                     print("No flag is applied (unless I implement the time flag)!")
@@ -161,12 +165,16 @@ class GravitySet(object):
                 raise ValueError("Cannot find the data ({0})!".format(datakey))
         return dataList
 
-    def get_DataSeries(self, datakey="obsdate", verbose=True):
+    def get_DataSeries(self, datakey="obsdate", obsdate=None, verbose=True):
         """
         Get the time series of data identified by data_key.
         """
+        if obsdate is None:
+            gd_list = self.gd_list
+        else:
+            gd_list = self.get_Data_obsdate(obsdate)
         dataList = []
-        for gd in self.gd_list:
+        for gd in gd_list:
             if datakey == "obsdate":
                 dataList.append(gd.obsdate)
             elif datakey in gd.get_data_keys():
@@ -204,6 +212,18 @@ class GravityData(object):
         """
         #-> Prior properties
         self.__catglist = ["SINGLE_SCI_VIS", "SINGLE_SCI_P2VMRED"]
+        self.ndim_ft = {
+            "vis" : (1, 6, 5),
+            "vis2": (1, 6, 5),
+            "flux": (1, 4, 5),
+            "t3"  : (1, 4, 5),
+        }
+        self.ndim_sc = {
+            "vis" : (1, 6, 210),
+            "vis2": (1, 6, 210),
+            "flux": (1, 4, 210),
+            "t3"  : (1, 4, 210),
+        }
         #-> Read in the fits file data_dict is None
         if data_dict is None:
             assert not filename is None
@@ -232,6 +252,63 @@ class GravityData(object):
         else:
             raise ValueError("The catg ({0}) is not supported!".format(self.catg))
 
+    def ruv_mas(self, flag=True, flag_kwargs={}):
+        """
+        Calculate the uv distance with units: milli-arcsec^1.
+        """
+        u, v = self.uv_mas(flag=flag, flag_kwargs=flag_kwargs)
+        ruv = np.sqrt(u**2 + v**2)
+        return ruv
+
+    def uv_mas(self, flag=True, flag_kwargs={}):
+        """
+        Calculate the uv coordinates with units: milli-arcsec^1.
+        """
+        if flag:
+            u = self.get_data_flagged("vis_ucoord", **flag_kwargs)
+            v = self.get_data_flagged("vis_vcoord", **flag_kwargs)
+        else:
+            u = self.get_data_fulldim("vis_ucoord")
+            v = self.get_data_fulldim("vis_vcoord")
+        wavelength = self.get_data("wavelength")
+        u_mas = u / wavelength / (180. / np.pi * 3.6e6)
+        v_mas = v / wavelength / (180. / np.pi * 3.6e6)
+        return (u_mas, v_mas)
+
+    def get_baseline_UT(self, baseline_index):
+        """
+        Get the baseline of the telescope pairs in terms of telescope name.
+
+        Parameters
+        ----------
+        baseline_index : int
+            The index of the baseline, 0-5.
+        """
+        tel_name = self.data.data_dict["tel_name"]
+        sta_index = list(self.data.data_dict["sta_index"])
+        bsl_code = list(self.data.data_dict["vis_baseline"][0, baseline_index, :])
+        bsl_list = []
+        for bsl in bsl_code:
+            bsl_list.append(tel_name[sta_index.index(bsl)])
+        return bsl_list
+
+    def get_baseline_Tidx(self, baseline_index):
+        """
+        Get the baseline of the telescope pairs in terms of index 0~3.
+
+        Parameters
+        ----------
+        baseline_index : int
+            The index of the baseline, 0-5.
+        """
+        tel_name = self.data.data_dict["tel_name"]
+        sta_index = list(self.data.data_dict["sta_index"])
+        bsl_code = list(self.data.data_dict["vis_baseline"][0, baseline_index, :])
+        bsl_list = []
+        for bsl in bsl_code:
+            bsl_list.append(sta_index.index(bsl))
+        return bsl_list
+
     def get_data_keys(self):
         """
         Get the keys of the data_dict.
@@ -252,6 +329,20 @@ class GravityData(object):
         The data array or None if the keyword is not found.
         """
         return self.data.get_data(keyword)
+
+    def get_data_fulldim(self, keyword):
+        """
+        Get the data expanded in full dimention.
+
+        keyword : string
+            The keyword of the data.
+
+        Returns
+        -------
+        data_array: array
+            The data array expanded to its full dimension.
+        """
+        return self.data.get_data_fulldim(keyword)
 
     def get_data_flagged(self, keyword, **kwargs):
         """
@@ -315,6 +406,20 @@ class GravityVis(object):
         """
         #-> Prior properties
         self.__catglist = ["SINGLE_SCI_VIS"]
+        self.ndim_ft = {
+            "vis" : (1, 6, 5),
+            "vis2": (1, 6, 5),
+            "flux": (1, 4, 5),
+            "t3"  : (1, 4, 5),
+        }
+        self.ndim_sc = {
+            "vis" : (1, 6, 210),
+            "vis2": (1, 6, 210),
+            "flux": (1, 4, 210),
+            "t3"  : (1, 4, 210),
+        }
+        self.datakey_list = ["vis", "vis2", "t3", "flux"]
+        self.auxkey_list = ["station", "baseline", "triangle"]
         #-> Read in the fits file data_dict is None
         if data_dict is None:
             assert not filename is None
@@ -359,21 +464,22 @@ class GravityVis(object):
                           header.get("HIERARCH ESO ISS AMBI TAU0 END", np.nan)],
          }
         #-> Data content
+        wavelength = data_dict["OI_WAVELENGTH"]["EFF_WAVE"]
         visdata = data_dict["OI_VIS"]
         vis2data = data_dict["OI_VIS2"]
         t3data = data_dict["OI_T3"]
         fluxdata = data_dict["OI_FLUX"]
         self.data_dict = {
             #--> General data
-            "wavelength": data_dict["OI_WAVELENGTH"]["EFF_WAVE"],
+            "wavelength": wavelength,
             "tel_name": data_dict["TEL_NAME"],
             "sta_name": data_dict["STA_NAME"],
             "sta_index": data_dict["STA_INDEX"],
             #--> Vis data
             "vis_flag": visdata["FLAG"],
             "vis_baseline": visdata["STA_INDEX"],
-            "vis_u": visdata["UCOORD"],
-            "vis_v": visdata["VCOORD"],
+            "vis_ucoord": visdata["UCOORD"],
+            "vis_vcoord": visdata["VCOORD"],
             "vis_amp": visdata["VISAMP"],
             "vis_amp_err": visdata["VISAMPERR"],
             "vis_phi": visdata["VISPHI"],
@@ -383,17 +489,17 @@ class GravityVis(object):
             #--> Vis2 data
             "vis2_flag": vis2data["FLAG"],
             "vis2_baseline": vis2data["STA_INDEX"],
-            "vis2_u": vis2data["UCOORD"],
-            "vis2_v": vis2data["VCOORD"],
+            "vis2_ucoord": vis2data["UCOORD"],
+            "vis2_vcoord": vis2data["VCOORD"],
             "vis2_data": vis2data["VIS2DATA"],
             "vis2_err": vis2data["VIS2ERR"],
             #--> T3 data
             "t3_flag": t3data["FLAG"],
             "t3_triangle": t3data["STA_INDEX"],
-            "t3_u1": t3data["U1COORD"],
-            "t3_v1": t3data["V1COORD"],
-            "t3_u2": t3data["U2COORD"],
-            "t3_v2": t3data["V2COORD"],
+            "t3_u1coord": t3data["U1COORD"],
+            "t3_v1coord": t3data["V1COORD"],
+            "t3_u2coord": t3data["U2COORD"],
+            "t3_v2coord": t3data["V2COORD"],
             "t3_amp": t3data["T3AMP"],
             "t3_amp_err": t3data["T3AMPERR"],
             "t3_phi": t3data["T3PHI"],
@@ -420,6 +526,42 @@ class GravityVis(object):
         """
         return self.data_dict.get(keyword, None)
 
+    def get_data_fulldim(self, keyword):
+        """
+        Get the data expanded in full dimention.
+
+        keyword : string
+            The keyword of the data.
+
+        Returns
+        -------
+        data_array: array
+            The data array expanded to its full dimension.
+        """
+        data_array = self.data_dict[keyword]
+        kw_prf, kw_par = keyword.split("_")[:2]
+        if not kw_prf in self.datakey_list:
+            raise ValueError("The keyword ({0}) cannot be expanded!".format(keyword))
+        if kw_par in self.auxkey_list:
+            raise ValueError("The keyword ({0}) cannot be expanded!".format(keyword))
+        if self.insname == "GRAVITY_FT":
+            ndim = self.ndim_ft[kw_prf]
+        elif self.insname == "GRAVITY_SC":
+            ndim = self.ndim_sc[kw_prf]
+        else:
+            raise ValueError("Cannot recognize self.insname ({0})!".format(self.insname))
+        dshape = data_array.shape
+        if dshape == ndim:
+            return data_array
+        else:
+            if (len(dshape) == 2) & (dshape[0] == ndim[0]) & (dshape[1] == ndim[1]):
+                data_array_ext = np.zeros(ndim, dtype=np.float)
+                for loop in range(ndim[2]):
+                    data_array_ext[:, :, loop] = data_array
+                return data_array_ext
+            else:
+                raise ValueError("The shape of {0} ({1}) is not correct ({2})!".format(keyword, dshape, ndim))
+
     def get_data_flagged(self, keyword):
         """
         Get the masked data according to the flag.
@@ -434,12 +576,14 @@ class GravityVis(object):
         data_flagged: masked array
             The masked data array.
         """
-        data_array = self.data_dict[keyword]
-        kw_flag = "{0}_flag".format(keyword.split("_")[0])
-        flag = self.data_dict.get(kw_flag, None)
-        if flag is None:
-            raise ValueError("The flag keyword ({0}) is not recognized!".format(kw_flag))
-        assert data_array.shape == flag.shape
+        kw_prf, kw_par = keyword.split("_")[:2]
+        if not kw_prf in self.datakey_list:
+            raise ValueError("The keyword ({0}) cannot be flagged!".format(keyword))
+        if kw_par in self.auxkey_list:
+            raise ValueError("The keyword ({0}) cannot be flagged!".format(keyword))
+        data_array = self.get_data_fulldim(keyword)
+        kw_flag = "{0}_flag".format(kw_prf)
+        flag = self.get_data_fulldim(kw_flag)
         data_flagged = np.ma.array(data_array, mask=flag)
         return data_flagged
 
@@ -482,6 +626,20 @@ class GravityP2VMRED(object):
         """
         #-> Prior properties
         self.__catglist = ["SINGLE_SCI_P2VMRED"]
+        self.ndim_ft = {
+            "vis" : (-1, 6, 5),
+            "vis2": (-1, 6, 5),
+            "flux": (-1, 4, 5),
+            "t3"  : (-1, 4, 5),
+        }
+        self.ndim_sc = {
+            "vis" : (-1, 6, 210),
+            "vis2": (-1, 6, 210),
+            "flux": (-1, 4, 210),
+            "t3"  : (-1, 4, 210),
+        }
+        self.datakey_list = ["vis", "vis2", "t3", "flux"]
+        self.auxkey_list = ["station", "baseline", "triangle"]
         #-> Read in the fits file data_dict is None
         if data_dict is None:
             assert not filename is None
@@ -520,11 +678,12 @@ class GravityP2VMRED(object):
                           header.get("HIERARCH ESO ISS AMBI TAU0 END", np.nan)],
          }
         #-> Data content
+        wavelength = data_dict["OI_WAVELENGTH"]["EFF_WAVE"]
         visdata = data_dict["OI_VIS"]
         fluxdata = data_dict["OI_FLUX"]
         self.data_dict = {
             #--> General data
-            "wavelength": data_dict["OI_WAVELENGTH"]["EFF_WAVE"],
+            "wavelength": wavelength,
             "tel_name": data_dict["TEL_NAME"],
             "sta_name": data_dict["STA_NAME"],
             "sta_index": data_dict["STA_INDEX"],
@@ -532,14 +691,16 @@ class GravityP2VMRED(object):
             "vis_flag": visdata["FLAG"],
             "vis_baseline": visdata["STA_INDEX"],
             "vis_time": visdata["TIME"],
-            "vis_u": visdata["UCOORD"],
-            "vis_v": visdata["VCOORD"],
+            "vis_ucoord": visdata["UCOORD"],
+            "vis_vcoord": visdata["VCOORD"],
             "vis_data": visdata["VISDATA"],
             "vis_err": visdata["VISERR"],
             "vis_self_ref": visdata["SELF_REF"],
             "vis_phase_ref": visdata.get("PHASE_REF", None),
             "vis_f1f2": visdata["F1F2"],
             "vis_rejection_flag": visdata["REJECTION_FLAG"],
+            "vis_gdelay": visdata["GDELAY"],
+            "vis_gdelay_boot": visdata["GDELAY_BOOT"],
             #--> Flux data
             "flux_flag": fluxdata["FLAG"],
             "flux_station": fluxdata["STA_INDEX"],
@@ -575,6 +736,42 @@ class GravityP2VMRED(object):
         """
         return self.data_dict.get(keyword, None)
 
+    def get_data_fulldim(self, keyword):
+        """
+        Get the data expanded in full dimention.
+
+        keyword : string
+            The keyword of the data.
+
+        Returns
+        -------
+        data_array: array
+            The data array expanded to its full dimension.
+        """
+        data_array = self.data_dict[keyword]
+        kw_prf, kw_par = keyword.split("_")[:2]
+        if not kw_prf in self.datakey_list:
+            raise ValueError("The keyword ({0}) cannot be expanded!".format(keyword))
+        if kw_par in self.auxkey_list:
+            raise ValueError("The keyword ({0}) cannot be expanded!".format(keyword))
+        if self.insname == "GRAVITY_FT":
+            ndim = self.ndim_ft[kw_prf]
+        elif self.insname == "GRAVITY_SC":
+            ndim = self.ndim_sc[kw_prf]
+        else:
+            raise ValueError("Cannot recognize self.insname ({0})!".format(self.insname))
+        dshape = data_array.shape
+        if dshape[1:] == ndim[1:]: # The 0th dimension of P2VMRED data is not fixed.
+            return data_array
+        else:
+            if (len(dshape) == 2) & (dshape[1] == ndim[1]):
+                data_array_ext = np.zeros((dshape[0], dshape[1], ndim[2]), dtype=np.float)
+                for loop in range(ndim[2]):
+                    data_array_ext[:, :, loop] = data_array
+                return data_array_ext
+            else:
+                raise ValueError("The shape of {0} ({1}) is not correct ({2})!".format(keyword, dshape, ndim))
+
     def get_data_flagged(self, keyword, kw_flag="vis_rejection_flag", threshold=1.):
         """
         Get the masked data according to the rejection flag.
@@ -593,21 +790,14 @@ class GravityP2VMRED(object):
         data_flagged: masked array
             The masked data array.
         """
-        data_array = self.get_data(keyword)
-        if data_array is None:
-            raise ValueError("The keyword ({0}) is not recognized!".format(keyword))
-        flag = self.get_data(kw_flag)
-        if flag is None:
-            raise ValueError("Cannot find the flag data ({0})!".format(kw_flag))
-        dshape = data_array.shape
-        if len(dshape) == 2:
-            mask = flag > threshold
-        elif len(dshape) == 3:
-            mask = np.zeros_like(data_array, dtype=bool)
-            for loop in range(dshape[2]):
-                mask[:, :, loop] = flag > threshold
-        else:
-            raise ValueError("The data shape ({0}) is wrong!".format(dshape))
+        kw_prf, kw_par = keyword.split("_")[:2]
+        if not kw_prf in self.datakey_list:
+            raise ValueError("The keyword ({0}) cannot be flagged!".format(keyword))
+        if kw_par in self.auxkey_list:
+            raise ValueError("The keyword ({0}) cannot be flagged!".format(keyword))
+        data_array = self.get_data_fulldim(keyword)
+        flag = self.get_data_fulldim(kw_flag)
+        mask = flag > threshold
         data_flagged = np.ma.array(data_array, mask=mask)
         return data_flagged
 
@@ -630,7 +820,9 @@ class GravityP2VMRED(object):
 
 reshapeDict = {
     "OI_VIS": 6, # Number of baselines
+    "OI_VIS2": 6, # Number of baselines
     "OI_FLUX": 4, # Number of telescopes
+    "OI_T3": 4, # Number of triangles
 }
 def readfits_ins(filename, insname, dataList=None):
     """
