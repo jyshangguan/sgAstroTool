@@ -2,11 +2,25 @@ import numpy as np
 
 __all__ = ["gravi_vis_average_bootstrap"]
 
-def gravi_vis_average_bootstrap(p2vmred_dict, nboot=20, nseg=100):
+def gravi_vis_average_bootstrap(p2vmred_dict, nboot=20, nseg_default=100):
     """
     Calculate average the P2VMRED data to obtain the SCIVIS data.  The function
     works with the same procedure as the function gravi_vis_average_bootstrap()
     in gvraid2:/home/grav/SVN/gravity_dev/gravityp/gravi/gravi_vis.c
+
+    Parameters
+    ----------
+    p2vmred_dict : dict
+        The p2vmred data used for average, with the following contents:
+        rejection_flag: Baseline wise rejection flag, (frame, baseline);
+        visdata: Unnormalized complex visibility data, (frame, baseline, channel);
+        viserr: The error of visdata, (frame, baseline, channel);
+        self_ref: The self reference phase, (frame, baseline, channel);
+        f1f2: The geometric flux, (frame, baseline, channel).
+    nboot : int, default: 20
+        The number of times to bootstrap the data.
+    nseg_default : int, default: 100
+        The number of segments to cut the data.
     """
     rejflag = p2vmred_dict["rejection_flag"]
     visdata = p2vmred_dict["visdata"]
@@ -19,28 +33,23 @@ def gravi_vis_average_bootstrap(p2vmred_dict, nboot=20, nseg=100):
     visP_seg = []
     f12_seg  = []
     f1f2_seg = []
-    nf, nb = rejflag.shape
-    nc = visdata.shape[2]
-    for loop_b in range(nb):
+    nfrm, nbase, nchn = visdata.shape # Get the number of frames, baselines and channels
+    for loop_b in range(nbase):
         fltr = rejflag[:, loop_b] == 0
-        nr = np.sum(fltr)
-        nrow = nr / nseg
-        nrange = nrow * nseg
-        #
-        data = visdata[fltr, loop_b, :]
-        visdata_rs = data[:nrange, :].reshape(-1, nseg, nc)
-        #
-        data = viserr[fltr, loop_b, :]
-        viserr_rs = data[:nrange, :].reshape(-1, nseg, nc)
-        #
-        data = selref[fltr, loop_b, :]
-        selref_rs = data[:nrange, :].reshape(-1, nseg, nc)
-        #
-        data = f1f2[fltr, loop_b, :]
-        f1f2_rs = data[:nrange, :].reshape(-1, nseg, nc)
+        nvalid = np.sum(fltr)
+        #--> Wisely choose the number of rows in each segment, 1 row per segment
+        #if the number of frames is less than nseg_default.
+        nrow_per_seg = np.max([nvalid / np.min([nfrm, nseg_default]), 1])
+        nseg = int(nvalid / nrow_per_seg) # The number of segment finally used.
+        ncut = nrow_per_seg * nseg
+        #--> Reshape the data into segments, (nrow_per_seg, nseg, nchn)
+        visdata_rs = visdata[fltr, loop_b, :][:ncut, :].reshape(nrow_per_seg, nseg, nchn)
+        viserr_rs = viserr[fltr, loop_b, :][:ncut, :].reshape(nrow_per_seg, nseg, nchn)
+        selref_rs = selref[fltr, loop_b, :][:ncut, :].reshape(nrow_per_seg, nseg, nchn)
+        f1f2_rs = f1f2[fltr, loop_b, :][:ncut, :].reshape(nrow_per_seg, nseg, nchn)
         f12sq_rs = f1f2_rs.copy() # Exactly following the pipeline
         f12sq_rs[f12sq_rs < 1e-15] = 0.0
-        #
+        #--> Calculate the intermediate quantities in the segments.
         mR = np.real(visdata_rs)
         mI = np.imag(visdata_rs)
         eR = np.real(viserr_rs)
@@ -71,7 +80,6 @@ def gravi_vis_average_bootstrap(p2vmred_dict, nboot=20, nseg=100):
             segList = np.arange(nseg)
         else:
             segList = np.random.randint(nseg, size=nseg)
-        #print segList
         visR_boot.append(np.sum(visR_seg[:, segList, :], axis=1))
         visI_boot.append(np.sum(visI_seg[:, segList, :], axis=1))
         visP_boot.append(np.sum(visP_seg[:, segList, :], axis=1))
@@ -83,14 +91,19 @@ def gravi_vis_average_bootstrap(p2vmred_dict, nboot=20, nseg=100):
     visP_boot = np.array(visP_boot)
     f1f2_boot = np.array(f1f2_boot)
     f12_boot  = np.array(f12_boot)
+    #--> Calculate the final physical quantities: visamp, vis2 and visphi
     visamp_boot = np.sqrt(visR_boot**2 + visI_boot**2) / f12_boot
     vis2_boot   = visP_boot / f1f2_boot
+    visphi_boot = np.angle(visR_boot + 1j*visI_boot)
+    visphi_boot[1:, :, :] = np.angle(np.exp(1j*(visphi_boot[0, :, :]-visphi_boot[1:, :, :])))
     scivis_dict = {
         "visamp": visamp_boot[0, :, :],
+        "visphi": visphi_boot[0, :, :] * 180./np.pi,
         "vis2": vis2_boot[0, :, :],
         "visR": visR_boot[0, :, :],
         "visI": visI_boot[0, :, :],
         "visamp_std": np.std(visamp_boot, axis=0, ddof=1),
+        "visphi_std": np.std(visphi_boot, axis=0, ddof=1) * 180./np.pi,
         "vis2_std" : np.std(vis2_boot, axis=0, ddof=1),
         "visR_std" : np.std(visR_boot, axis=0, ddof=1),
         "visI_std" : np.std(visI_boot, axis=0, ddof=1),
