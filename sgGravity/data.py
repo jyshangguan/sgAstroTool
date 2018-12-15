@@ -186,9 +186,6 @@ class GravitySet(object):
         return dataList
 
 
-
-
-
 class GravityData(object):
     """
     The object of gravity data of a single observation.
@@ -211,7 +208,8 @@ class GravityData(object):
             Print notes if True.
         """
         #-> Prior properties
-        self.__catglist = ["SINGLE_SCI_VIS", "SINGLE_SCI_P2VMRED"]
+        self.__catglist_vis = ["SINGLE_SCI_VIS", "SINGLE_SCI_VIS_CALIBRATED", "SINGLE_CAL_VIS"]
+        self.__catglist_p2vmred = ["SINGLE_SCI_P2VMRED"]
         self.ndim_ft = {
             "vis" : (1, 6, 5),
             "vis2": (1, 6, 5),
@@ -237,17 +235,15 @@ class GravityData(object):
         self.header = header
         #--> Basical information
         self.catg = header.get("HIERARCH ESO PRO CATG", None)
-        if not self.catg in self.__catglist:
-            raise ValueError("The catg ({0}) has not been tested before!".format(self.catg))
         self.insname = data_dict["INSNAME"]
         self.obsdate = datetime.datetime.strptime(header["DATE-OBS"], '%Y-%m-%dT%H:%M:%S')
         self.object = header["OBJECT"]
         self.ra=header['RA']
         self.dec=header['DEC']
         #-> Get the data
-        if self.catg in ["SINGLE_SCI_VIS"]:
+        if self.catg in self.__catglist_vis:
             self.data = GravityVis(data_dict, verbose=verbose)
-        elif self.catg in ["SINGLE_SCI_P2VMRED"]:
+        elif self.catg in self.__catglist_p2vmred:
             self.data = GravityP2VMRED(data_dict, verbose=verbose)
         else:
             raise ValueError("The catg ({0}) is not supported!".format(self.catg))
@@ -405,7 +401,7 @@ class GravityVis(object):
             Print notes if True.
         """
         #-> Prior properties
-        self.__catglist = ["SINGLE_SCI_VIS"]
+        self.__catglist = ["SINGLE_SCI_VIS", "SINGLE_SCI_VIS_CALIBRATED", "SINGLE_CAL_VIS"]
         self.ndim_ft = {
             "vis" : (1, 6, 5),
             "vis2": (1, 6, 5),
@@ -480,12 +476,17 @@ class GravityVis(object):
             "vis_baseline": visdata["STA_INDEX"],
             "vis_ucoord": visdata["UCOORD"],
             "vis_vcoord": visdata["VCOORD"],
+            "vis_time": visdata["TIME"],
             "vis_amp": visdata["VISAMP"],
             "vis_amp_err": visdata["VISAMPERR"],
             "vis_phi": visdata["VISPHI"],
             "vis_phi_err": visdata["VISPHIERR"],
             "vis_data": visdata["VISDATA"],
             "vis_err": visdata["VISERR"],
+            "vis_r": visdata["RVIS"],
+            "vis_r_err": visdata["RVISERR"],
+            "vis_i": visdata["IVIS"],
+            "vis_i_err": visdata["IVISERR"],
             #--> Vis2 data
             "vis2_flag": vis2data["FLAG"],
             "vis2_baseline": vis2data["STA_INDEX"],
@@ -772,7 +773,7 @@ class GravityP2VMRED(object):
             else:
                 raise ValueError("The shape of {0} ({1}) is not correct ({2})!".format(keyword, dshape, ndim))
 
-    def get_data_flagged(self, keyword, kw_flag="vis_rejection_flag", threshold=1.):
+    def get_data_flagged(self, keyword, kw_flag="vis_rejection_flag", threshold=0.):
         """
         Get the masked data according to the rejection flag.
 
