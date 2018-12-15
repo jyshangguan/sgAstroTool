@@ -1,6 +1,9 @@
 import datetime
 import numpy as np
 from astropy.io import fits
+from astropy import units as u
+
+__all__ = ["GravitySet", "GravityData", "GravityVis", "GravityP2VMRED", "readfits_ins"]
 
 class GravitySet(object):
     """
@@ -247,6 +250,69 @@ class GravityData(object):
             self.data = GravityP2VMRED(data_dict, verbose=verbose)
         else:
             raise ValueError("The catg ({0}) is not supported!".format(self.catg))
+
+    def get_time_dit(self, unit_read="s"):
+        """
+        Get the integration time of one DIT of the data.
+
+        Parameters
+        ----------
+        unit_read : string, default: us
+            The unit of the read-in data.  The default value of GRAVITY data is
+            microsecond.
+
+        Returns
+        -------
+        dit : Astropy Quantity
+            The integration time of one DIT.
+        """
+        if self.insname == "GRAVITY_SC":
+            det_num = "DET2"
+        elif self.insname == "GRAVITY_FT":
+            det_num = "DET3"
+        else:
+            raise ValueError("Cannot recognize the insname ({0})!".format(self.insname))
+        keyword = "HIERARCH ESO {0} SEQ1 DIT".format(det_num)
+        dit = self.header.get(keyword) * u.Unit(unit_read)
+        return dit
+
+    def get_time_start(self, unit_read="us"):
+        """
+        Get the start time of the data (first time of VISTIME).
+
+        Parameters
+        ----------
+        unit_read : string, default: us
+            The unit of the read-in data.  The default value of GRAVITY data is
+            microsecond.
+
+        Returns
+        -------
+        time_start : Astropy Quantity
+            The start time of the data.
+        """
+        vis_time = self.get_data("vis_time")
+        time_start = vis_time[0, 0] * u.Unit(unit_read)
+        return time_start
+
+    def get_time_end(self, unit_read="us"):
+        """
+        Get the end time of the data (last time of VISTIME).
+
+        Parameters
+        ----------
+        unit_read : string, default: us
+            The unit of the read-in data.  The default value of GRAVITY data is
+            microsecond.
+
+        Returns
+        -------
+        time_start : Astropy Quantity
+            The start time of the data.
+        """
+        vis_time = self.get_data("vis_time")
+        time_end = vis_time[-1, 0] * u.Unit(unit_read)
+        return time_end
 
     def ruv_mas(self, flag=True, flag_kwargs={}):
         """
