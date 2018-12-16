@@ -112,7 +112,7 @@ class GravitySet(object):
         gdList = []
         for obsdate in obsdateList[fltr]:
             gdList.append(self.get_Data_obsdate(obsdate, nearest=False, verbose=verbose))
-        return gdList
+        return GravitySet(gd_list=gdList)
 
     def get_Data_obsdate_single(self, obsdate, nearest=True, verbose=True):
         """
@@ -188,6 +188,17 @@ class GravitySet(object):
                 raise ValueError("Cannot find the data ({0})!".format(datakey))
         return dataList
 
+    def __getitem__(self, key):
+        """
+        Get the individual GravityData.
+        """
+        return self.gd_list[key]
+
+    def __len__(self):
+        """
+        Get the length of the GravityData list.
+        """
+        return len(self.gd_list)
 
 class GravityData(object):
     """
@@ -388,9 +399,11 @@ class GravityData(object):
 
         Returns
         -------
-        The data array or None if the keyword is not found.
+        data : array
+            The data array or None if the keyword is not found.
         """
-        return self.data.get_data(keyword)
+        data = self.data.get_data(keyword)
+        return data
 
     def get_data_fulldim(self, keyword):
         """
@@ -404,7 +417,8 @@ class GravityData(object):
         data_array: array
             The data array expanded to its full dimension.
         """
-        return self.data.get_data_fulldim(keyword)
+        data_fulldim = self.data.get_data_fulldim(keyword)
+        return data_fulldim
 
     def get_data_flagged(self, keyword, **kwargs):
         """
@@ -421,7 +435,8 @@ class GravityData(object):
         data_flagged: masked array
             The masked data array.
         """
-        return self.data.get_data_flagged(keyword, **kwargs)
+        data_flagged = self.data.get_data_flagged(keyword, **kwargs)
+        return data_flagged
 
     def get_qc_keys(self):
         """
@@ -534,48 +549,50 @@ class GravityVis(object):
         self.data_dict = {
             #--> General data
             "wavelength": wavelength,
+            "bandwidth": data_dict["OI_WAVELENGTH"]["EFF_BAND"],
             "tel_name": data_dict["TEL_NAME"],
             "sta_name": data_dict["STA_NAME"],
             "sta_index": data_dict["STA_INDEX"],
             #--> Vis data
-            "vis_flag": visdata["FLAG"],
+            "vis_flag"    : visdata["FLAG"],
             "vis_baseline": visdata["STA_INDEX"],
-            "vis_ucoord": visdata["UCOORD"],
-            "vis_vcoord": visdata["VCOORD"],
-            "vis_time": visdata["TIME"],
-            "vis_amp": visdata["VISAMP"],
-            "vis_amp_err": visdata["VISAMPERR"],
-            "vis_phi": visdata["VISPHI"],
-            "vis_phi_err": visdata["VISPHIERR"],
-            "vis_data": visdata["VISDATA"],
-            "vis_err": visdata["VISERR"],
-            "vis_r": visdata["RVIS"],
-            "vis_r_err": visdata["RVISERR"],
-            "vis_i": visdata["IVIS"],
-            "vis_i_err": visdata["IVISERR"],
+            "vis_ucoord"  : visdata["UCOORD"],
+            "vis_vcoord"  : visdata["VCOORD"],
+            "vis_time"    : visdata["TIME"],
+            "vis_int_time": visdata["INT_TIME"],
+            "vis_amp"     : visdata["VISAMP"],
+            "vis_amp_err" : visdata["VISAMPERR"],
+            "vis_phi"     : visdata["VISPHI"],
+            "vis_phi_err" : visdata["VISPHIERR"],
+            "vis_data"    : visdata["VISDATA"],
+            "vis_err"     : visdata["VISERR"],
+            "vis_r"       : visdata["RVIS"],
+            "vis_r_err"   : visdata["RVISERR"],
+            "vis_i"       : visdata["IVIS"],
+            "vis_i_err"   : visdata["IVISERR"],
             #--> Vis2 data
-            "vis2_flag": vis2data["FLAG"],
+            "vis2_flag"    : vis2data["FLAG"],
             "vis2_baseline": vis2data["STA_INDEX"],
-            "vis2_ucoord": vis2data["UCOORD"],
-            "vis2_vcoord": vis2data["VCOORD"],
-            "vis2_data": vis2data["VIS2DATA"],
-            "vis2_err": vis2data["VIS2ERR"],
+            "vis2_ucoord"  : vis2data["UCOORD"],
+            "vis2_vcoord"  : vis2data["VCOORD"],
+            "vis2_data"    : vis2data["VIS2DATA"],
+            "vis2_err"     : vis2data["VIS2ERR"],
             #--> T3 data
-            "t3_flag": t3data["FLAG"],
+            "t3_flag"    : t3data["FLAG"],
             "t3_triangle": t3data["STA_INDEX"],
-            "t3_u1coord": t3data["U1COORD"],
-            "t3_v1coord": t3data["V1COORD"],
-            "t3_u2coord": t3data["U2COORD"],
-            "t3_v2coord": t3data["V2COORD"],
-            "t3_amp": t3data["T3AMP"],
-            "t3_amp_err": t3data["T3AMPERR"],
-            "t3_phi": t3data["T3PHI"],
-            "t3_phi_err": t3data["T3PHIERR"],
+            "t3_u1coord" : t3data["U1COORD"],
+            "t3_v1coord" : t3data["V1COORD"],
+            "t3_u2coord" : t3data["U2COORD"],
+            "t3_v2coord" : t3data["V2COORD"],
+            "t3_amp"     : t3data["T3AMP"],
+            "t3_amp_err" : t3data["T3AMPERR"],
+            "t3_phi"     : t3data["T3PHI"],
+            "t3_phi_err" : t3data["T3PHIERR"],
             #--> Flux data
-            "flux_flag": fluxdata["FLAG"],
+            "flux_flag"   : fluxdata["FLAG"],
             "flux_station": fluxdata["STA_INDEX"],
-            "flux_data": fluxdata["FLUX"],
-            "flux_err": fluxdata["FLUXERR"],
+            "flux_data"   : fluxdata["FLUX"],
+            "flux_err"    : fluxdata["FLUXERR"],
         }
 
     def get_data(self, keyword):
@@ -589,9 +606,13 @@ class GravityVis(object):
 
         Returns
         -------
-        The data array or None if the keyword is not found.
+        data : array
+            The data array or None if the keyword is not found.
         """
-        return self.data_dict.get(keyword, None)
+        data = self.data_dict.get(keyword, None)
+        if not data is None:
+            data = data.copy()
+        return data
 
     def get_data_fulldim(self, keyword):
         """
@@ -605,7 +626,6 @@ class GravityVis(object):
         data_array: array
             The data array expanded to its full dimension.
         """
-        data_array = self.data_dict[keyword]
         kw_prf, kw_par = keyword.split("_")[:2]
         if not kw_prf in self.datakey_list:
             raise ValueError("The keyword ({0}) cannot be expanded!".format(keyword))
@@ -617,6 +637,9 @@ class GravityVis(object):
             ndim = self.ndim_sc[kw_prf]
         else:
             raise ValueError("Cannot recognize self.insname ({0})!".format(self.insname))
+        data_array = self.get_data(keyword)
+        if data_array is None:
+            raise ValueError("The keyword ({0}) is not recognized!".format(keyword))
         dshape = data_array.shape
         if dshape == ndim:
             return data_array
@@ -751,6 +774,7 @@ class GravityP2VMRED(object):
         self.data_dict = {
             #--> General data
             "wavelength": wavelength,
+            "bandwidth": data_dict["OI_WAVELENGTH"]["EFF_BAND"],
             "tel_name": data_dict["TEL_NAME"],
             "sta_name": data_dict["STA_NAME"],
             "sta_index": data_dict["STA_INDEX"],
@@ -758,6 +782,7 @@ class GravityP2VMRED(object):
             "vis_flag": visdata["FLAG"],
             "vis_baseline": visdata["STA_INDEX"],
             "vis_time": visdata["TIME"],
+            "vis_int_time": visdata["INT_TIME"],
             "vis_ucoord": visdata["UCOORD"],
             "vis_vcoord": visdata["VCOORD"],
             "vis_data": visdata["VISDATA"],
@@ -799,9 +824,13 @@ class GravityP2VMRED(object):
 
         Returns
         -------
-        The data array or None if the keyword is not found.
+        data : array
+            The data array or None if the keyword is not found.
         """
-        return self.data_dict.get(keyword, None)
+        data = self.data_dict.get(keyword, None)
+        if not data is None:
+            data = data.copy()
+        return data
 
     def get_data_fulldim(self, keyword):
         """
@@ -815,7 +844,6 @@ class GravityP2VMRED(object):
         data_array: array
             The data array expanded to its full dimension.
         """
-        data_array = self.data_dict[keyword]
         kw_prf, kw_par = keyword.split("_")[:2]
         if not kw_prf in self.datakey_list:
             raise ValueError("The keyword ({0}) cannot be expanded!".format(keyword))
@@ -827,6 +855,9 @@ class GravityP2VMRED(object):
             ndim = self.ndim_sc[kw_prf]
         else:
             raise ValueError("Cannot recognize self.insname ({0})!".format(self.insname))
+        data_array = self.get_data(keyword)
+        if data_array is None:
+            raise ValueError("The keyword ({0}) is not recognized!".format(keyword))
         dshape = data_array.shape
         if dshape[1:] == ndim[1:]: # The 0th dimension of P2VMRED data is not fixed.
             return data_array
@@ -839,7 +870,7 @@ class GravityP2VMRED(object):
             else:
                 raise ValueError("The shape of {0} ({1}) is not correct ({2})!".format(keyword, dshape, ndim))
 
-    def get_data_flagged(self, keyword, kw_flag="vis_rejection_flag", threshold=0.):
+    def get_data_flagged(self, keyword, mask=None):
         """
         Get the masked data according to the rejection flag.
 
@@ -847,10 +878,9 @@ class GravityP2VMRED(object):
         ----------
         keyword : string
             The keyword of the data.
-        kw_flag : string, default: vis_rejection_flag
-            The keyword of the flag.
-        threshold : float, default: 1.
-            The threshold above which the data are flagged.
+        mask : bool array (optional)
+            The specified mask.  If None, the "REJECTION_FLAG" will be used to
+            flag the data.
 
         Returns
         -------
@@ -863,8 +893,10 @@ class GravityP2VMRED(object):
         if kw_par in self.auxkey_list:
             raise ValueError("The keyword ({0}) cannot be flagged!".format(keyword))
         data_array = self.get_data_fulldim(keyword)
-        flag = self.get_data_fulldim(kw_flag)
-        mask = flag > threshold
+        if mask is None:
+            mask = self.get_data_fulldim("vis_rejection_flag") > 0
+        else:
+            assert data_array.shape == mask.shape
         data_flagged = np.ma.array(data_array, mask=mask)
         return data_flagged
 

@@ -1,8 +1,9 @@
 import numpy as np
+from .data import GravityData
 
 __all__ = ["gravi_vis_average_bootstrap"]
 
-def gravi_vis_average_bootstrap(p2vmred_dict, nboot=20, nseg_default=100):
+def gravi_vis_average_bootstrap(p2vmred_ft, p2vmred_sc, mask=None, nboot=20, nseg_default=100):
     """
     Calculate average the P2VMRED data to obtain the SCIVIS data.  The function
     works with the same procedure as the function gravi_vis_average_bootstrap()
@@ -22,25 +23,44 @@ def gravi_vis_average_bootstrap(p2vmred_dict, nboot=20, nseg_default=100):
     nseg_default : int, default: 100
         The number of segments to cut the data.
     """
-    rejflag = p2vmred_dict["rejection_flag"]
-    visdata = p2vmred_dict["visdata"]
-    viserr  = p2vmred_dict["viserr"]
-    selref  = p2vmred_dict["self_ref"]
-    f1f2    = p2vmred_dict["f1f2"]
+    #-> Prepare the data
+    #-#> Select the correct frames
+    dit_sc = p2vmred_sc.get_time_dit()
+    time_start = p2vmred_sc.get_time_start() - dit_sc * 0.5
+    time_end   = p2vmred_sc.get_time_end() + dit_sc * 0.5
+    timeList = p2vmred_ft.get_data("vis_time")[:, 0]
+    fltr_time = (timeList > time_start.to("us").value) & (timeList < time_end.to("us").value)
+    rejflag = p2vmred_ft.get_data("vis_rejection_flag")
+    if not mask is None:
+        rejflag[mask] = 999
+    rejflag = rejflag[fltr_time, :]
+    visdata = p2vmred_ft.get_data("vis_data")[fltr_time, :, :]
+    viserr  = p2vmred_ft.get_data("vis_err")[fltr_time, :, :]
+    selref  = p2vmred_ft.get_data("vis_self_ref")[fltr_time, :, :]
+    f1f2    = p2vmred_ft.get_data("vis_f1f2")[fltr_time, :, :]
+    ucoord  = p2vmred_ft.get_data("vis_ucoord")[fltr_time, :]
+    vcoord  = p2vmred_ft.get_data("vis_vcoord")[fltr_time, :]
+    inttime = p2vmred_ft.get_data("vis_int_time")[fltr_time, :]
+    wavelength = p2vmred_ft.get_data("wavelength")
     #-> Segment the data into nseg blocks
     visR_seg = []
     visI_seg = []
     visP_seg = []
     f12_seg  = []
     f1f2_seg = []
-    nfrm, nbase, nchn = visdata.shape # Get the number of frames, baselines and channels
-    for loop_b in range(nbase):
+    ucoord_seg = []
+    vcoord_seg = []
+    inttime_seg = []
+    nfrm, nbsl, nchn = visdata.shape # Get the number of frames, baselines and channels
+    nsegList = []
+    for loop_b in range(nbsl):
         fltr = rejflag[:, loop_b] == 0
         nvalid = np.sum(fltr)
         #--> Wisely choose the number of rows in each segment, 1 row per segment
         #if the number of frames is less than nseg_default.
         nrow_per_seg = np.max([nvalid / np.min([nfrm, nseg_default]), 1])
         nseg = int(nvalid / nrow_per_seg) # The number of segment finally used.
+        nsegList.append(nseg)
         ncut = nrow_per_seg * nseg
         #--> Reshape the data into segments, (nrow_per_seg, nseg, nchn)
         visdata_rs = visdata[fltr, loop_b, :][:ncut, :].reshape(nrow_per_seg, nseg, nchn)
@@ -49,6 +69,9 @@ def gravi_vis_average_bootstrap(p2vmred_dict, nboot=20, nseg_default=100):
         f1f2_rs = f1f2[fltr, loop_b, :][:ncut, :].reshape(nrow_per_seg, nseg, nchn)
         f12sq_rs = f1f2_rs.copy() # Exactly following the pipeline
         f12sq_rs[f12sq_rs < 1e-15] = 0.0
+        ucoord_seg.append(ucoord[fltr, loop_b][:ncut])
+        vcoord_seg.append(vcoord[fltr, loop_b][:ncut])
+        inttime_seg.append(inttime[fltr, loop_b][:ncut])
         #--> Calculate the intermediate quantities in the segments.
         mR = np.real(visdata_rs)
         mI = np.imag(visdata_rs)
@@ -64,48 +87,78 @@ def gravi_vis_average_bootstrap(p2vmred_dict, nboot=20, nseg_default=100):
         visP_seg.append(tP)
         f1f2_seg.append(tF1F2)
         f12_seg.append(tF12)
-    visR_seg = np.array(visR_seg)
-    visI_seg = np.array(visI_seg)
-    visP_seg = np.array(visP_seg)
-    f1f2_seg = np.array(f1f2_seg)
-    f12_seg  = np.array(f12_seg)
     #-> Bootstrapping
-    visR_boot = []
-    visI_boot = []
-    visP_boot = []
-    f1f2_boot = []
-    f12_boot  = []
-    for boot in range(nboot):
-        if boot == 0:
-            segList = np.arange(nseg)
-        else:
-            segList = np.random.randint(nseg, size=nseg)
-        visR_boot.append(np.sum(visR_seg[:, segList, :], axis=1))
-        visI_boot.append(np.sum(visI_seg[:, segList, :], axis=1))
-        visP_boot.append(np.sum(visP_seg[:, segList, :], axis=1))
-        f12_boot.append(np.sum(f12_seg[:, segList, :], axis=1))
-        f1f2_boot.append(np.sum(f1f2_seg[:, segList, :], axis=1))
-        f1f2_boot[-1][f1f2_boot[-1] < 0.0] = 1e-15
-    visR_boot = np.array(visR_boot)
-    visI_boot = np.array(visI_boot)
-    visP_boot = np.array(visP_boot)
-    f1f2_boot = np.array(f1f2_boot)
-    f12_boot  = np.array(f12_boot)
-    #--> Calculate the final physical quantities: visamp, vis2 and visphi
-    visamp_boot = np.sqrt(visR_boot**2 + visI_boot**2) / f12_boot
-    vis2_boot   = visP_boot / f1f2_boot
-    visphi_boot = np.angle(visR_boot + 1j*visI_boot)
-    visphi_boot[1:, :, :] = np.angle(np.exp(1j*(visphi_boot[0, :, :]-visphi_boot[1:, :, :])))
+    visamp     = []
+    visphi     = []
+    vis2       = []
+    visR       = []
+    visI       = []
+    visamp_err = []
+    visphi_err = []
+    vis2_err   = []
+    visR_err   = []
+    visI_err   = []
+    u_mas      = []
+    v_mas      = []
+    inttime_total = []
+    for loop_b in range(nbsl):
+        visR_boot = []
+        visI_boot = []
+        visP_boot = []
+        f1f2_boot = []
+        f12_boot  = []
+        nseg = nsegList[loop_b]
+        for boot in range(nboot):
+            if boot == 0:
+                segList = np.arange(nseg)
+            else:
+                segList = np.random.randint(nseg, size=nseg)
+            visR_boot.append(np.sum(visR_seg[loop_b][segList, :], axis=0))
+            visI_boot.append(np.sum(visI_seg[loop_b][segList, :], axis=0))
+            visP_boot.append(np.sum(visP_seg[loop_b][segList, :], axis=0))
+            f12_boot.append(np.sum(f12_seg[loop_b][segList, :], axis=0))
+            f1f2_boot.append(np.sum(f1f2_seg[loop_b][segList, :], axis=0))
+            f1f2_boot[-1][f1f2_boot[-1] < 0.0] = 1e-15
+        visR_boot = np.array(visR_boot)
+        visI_boot = np.array(visI_boot)
+        visP_boot = np.array(visP_boot)
+        f1f2_boot = np.array(f1f2_boot)
+        f12_boot  = np.array(f12_boot)
+        #--> Calculate the final physical quantities: visamp, vis2 and visphi
+        visamp_boot = np.sqrt(visR_boot**2 + visI_boot**2) / f12_boot
+        vis2_boot   = visP_boot / f1f2_boot
+        visphi_boot = np.angle(visR_boot + 1j*visI_boot)
+        visphi_boot[1:, :] = np.angle(np.exp(1j*(visphi_boot[0, :]-visphi_boot[1:, :])))
+        visamp.append(visamp_boot[0, :])
+        visphi.append(visphi_boot[0, :])
+        vis2.append(vis2_boot[0, :])
+        visR.append(visR_boot[0, :])
+        visI.append(visI_boot[0, :])
+        visamp_err.append(np.std(visamp_boot, axis=0, ddof=1))
+        visphi_err.append(np.std(visphi_boot, axis=0, ddof=1) * 180./np.pi)
+        vis2_err.append(np.std(vis2_boot, axis=0, ddof=1))
+        visR_err.append(np.std(visR_boot, axis=0, ddof=1))
+        visI_err.append(np.std(visI_boot, axis=0, ddof=1))
+        #--> Calculate the coordinate and integration time
+        inttime_total = np.sum(inttime_seg[loop_b])
+        u_mean = np.sum(ucoord_seg[loop_b] * inttime_seg[loop_b]) / inttime_total
+        v_mean = np.sum(vcoord_seg[loop_b] * inttime_seg[loop_b]) / inttime_total
+        u_mas.append(u_mean / wavelength / (180. / np.pi * 3.6e6))
+        v_mas.append(v_mean / wavelength / (180. / np.pi * 3.6e6))
     scivis_dict = {
-        "visamp": visamp_boot[0, :, :],
-        "visphi": visphi_boot[0, :, :] * 180./np.pi,
-        "vis2": vis2_boot[0, :, :],
-        "visR": visR_boot[0, :, :],
-        "visI": visI_boot[0, :, :],
-        "visamp_std": np.std(visamp_boot, axis=0, ddof=1),
-        "visphi_std": np.std(visphi_boot, axis=0, ddof=1) * 180./np.pi,
-        "vis2_std" : np.std(vis2_boot, axis=0, ddof=1),
-        "visR_std" : np.std(visR_boot, axis=0, ddof=1),
-        "visI_std" : np.std(visI_boot, axis=0, ddof=1),
+        "visamp": np.array(visamp),
+        "visphi": np.array(visphi),
+        "vis2": np.array(vis2),
+        "visR": np.array(visR),
+        "visI": np.array(visI),
+        "visamp_err": np.array(visamp_err),
+        "visphi_err": np.array(visphi_err),
+        "vis2_err": np.array(vis2_err),
+        "visR_err": np.array(visR_err),
+        "visI_err": np.array(visI_err),
+        "u_mas": np.array(u_mas),
+        "v_mas": np.array(v_mas),
+        "inttime_total": inttime_total,
+        "fltr_time": fltr_time,
     }
     return scivis_dict
