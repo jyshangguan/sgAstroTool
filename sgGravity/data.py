@@ -793,6 +793,8 @@ class GravityP2VMRED(object):
             "vis_rejection_flag": visdata["REJECTION_FLAG"],
             "vis_gdelay": visdata["GDELAY"],
             "vis_gdelay_boot": visdata["GDELAY_BOOT"],
+            "vis_snr": visdata["SNR"],
+            "vis_snr_boot": visdata["SNR_BOOT"],
             #--> Flux data
             "flux_flag": fluxdata["FLAG"],
             "flux_station": fluxdata["STA_INDEX"],

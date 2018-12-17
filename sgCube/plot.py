@@ -22,7 +22,8 @@ stretchDict = {
 
 def Plot_Simple_Diagnose(cube, vel_range=[-400, 400], mask=None, mask_kws={}, map_vrange=None,
                          map_interpolation="none", contour_levels=[-1, 1, 3, 9],
-                         do_fit=True, plot_w20=True, plot_w50=True, verbose=False):
+                         do_fit=True, spc_velrange=None, plot_w20=True, plot_w50=True,
+                         verbose=False):
     """
     Plot the results of a simple diagnostics of the data cube.
     """
@@ -53,6 +54,10 @@ def Plot_Simple_Diagnose(cube, vel_range=[-400, 400], mask=None, mask_kws={}, ma
     fltr_nan = np.logical_not(np.isnan(spc_flux))
     spc_velc = spc_velc[fltr_nan]
     spc_flux = spc_flux[fltr_nan]
+    if not spc_velrange is None:
+        fltr_vel = (spc_velc.value > spc_velrange[0]) & (spc_velc.value < spc_velrange[1])
+        spc_velc = spc_velc[fltr_vel]
+        spc_flux = spc_flux[fltr_vel]
     if len(spc_flux) > 3: # Analyze the spectrum only when there are enough data
         pldres = Plot_Line_Diagnose(spc_velc, spc_flux, vel_range, do_fit, plot_w20,
                                     plot_w50, FigAx=(fig, ax2), verbose=verbose)
