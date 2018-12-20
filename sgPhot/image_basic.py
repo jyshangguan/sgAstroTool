@@ -18,7 +18,7 @@ import warnings
 __all__ = ["Background_Fit_Polynomial", "Segmentation_Remove_Circle",
            "Props_Remove_Circle", "Mask_Ellipse_Single", "Mask_Ellipse",
            "check_InsideCircle", "check_InsideEllipse", "Props_Refiner",
-           "Image"]
+           "Image", "image_align_wcs"]
 
 def Background_Fit_Polynomial(image, order=3, mask=None):
     """
@@ -1091,3 +1091,32 @@ class Image(object):
         Hdr_pri["History"] = "The original image is in layer {0}.".format(nlayer)
         hduList.writeto(filename, **kwargs)
         return 0
+
+def image_align_wcs(hdu):
+    """
+    Align the image according to the WCS so that x axis is RA and y axis is DEC.
+
+    Note
+    ----
+    There seems some discussion that the simple rotation is not very accurate,
+    however, that is likely higher order deviation.
+    """
+    from reproject import reproject_interp
+    hdr = hdu.header
+    img = hdu.data
+    hdr_rot = hdr.copy()
+    theta = hdr_rot.get("ORIENTAT", None)
+    if theta is None:
+        hdr_rot["CDELT1"] = -np.sqrt(hdr_rot["CD1_1"]**2 + hdr_rot["CD2_1"]**2)
+        hdr_rot["CDELT2"] = np.sqrt(hdr_rot["CD2_2"]**2 + hdr_rot["CD1_2"]**2)
+    else:
+        theta = theta * np.pi / 180.
+        hdr_rot["CDELT1"] = hdr_rot["CD1_1"] * np.cos(theta) - hdr_rot["CD2_1"] * np.sin(theta)
+        hdr_rot["CDELT2"] = hdr_rot["CD2_2"] * np.cos(theta) + hdr_rot["CD1_2"] * np.sin(theta)
+    hdr_rot["ORIENTAT"] = 0
+    hdr_rot.remove("CD1_1")
+    hdr_rot.remove("CD1_2")
+    hdr_rot.remove("CD2_1")
+    hdr_rot.remove("CD2_2")
+    img_rot, footprint = reproject_interp(hdu, hdr_rot)
+    return img_rot, hdr_rot

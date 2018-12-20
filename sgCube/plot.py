@@ -11,7 +11,7 @@ import sgSpec as bf
 from .analysis import *
 
 __all__ = ["Plot_Map", "Plot_Line_Diagnose", "Plot_Simple_Diagnose", "Plot_Mom_Maps",
-           "Plot_Channel_Maps"]
+           "Plot_Channel_Maps", "Plot_Beam", "imshow_wcs", "contour_wcs"]
 
 stretchDict = {
     "SqrtStretch": SqrtStretch,
@@ -246,13 +246,13 @@ def Plot_Line_Diagnose(spc_x, spc_f, rmsFlag=[-400, 400], do_fit=True, plot_w20=
             bf.busyFitPlot(fit_res, plot_w20=plot_w20, plot_w50=plot_w50, FigAx=(fig, ax),
                            yoffset=spc_med, color="r")
             flag_fit = True
-            if verbose:
-                w20_res = bf.lineParameters(fit_res, perc=20)
-                print("Line center is {0:.5f}.".format(w20_res["Xc"]))
-                print("W20 is {0:.2f}.".format(w20_res["Wline"]))
         except:
             if verbose:
                 print("Cannot plot the busyfit results...")
+        if verbose & flag_fit:
+            w20_res = bf.lineParameters_BF(fit_res, perc=20)
+            print("Line center is {0:.5f}.".format(w20_res["Xc"]))
+            print("W20 is {0:.2f}.".format(w20_res["Wline"]))
     ax.minorticks_on()
     ax.tick_params(axis='both', which='major', length=8, labelsize=18, width=1., direction="in")
     ax.tick_params(axis='both', which='minor', length=5, width=1., direction="in")
@@ -375,3 +375,93 @@ def Plot_Beam(ax, bmaj, bmin, bpa, **ellipse_kws):
         by = ylim[0] + 0.1 * (ylim[1] - ylim[0])
         ellipse_kws["xy"] = (bx, by)
     ax.add_artist(Ellipse(width=bmin, height=bmaj, angle=-bpa, **ellipse_kws))
+
+## Plot the general images
+def get_extent_ref(wcs, image_shape, coord_ref=None, origin="lower", plot_units="arcsec"):
+    """
+    Get the extent for imshow or contour given the reference
+    coordinate.
+
+    Parameters
+    ----------
+    wcs : astropy WCS object
+        The WCS of the image.
+    image_shape : tuple
+        The shape of the image array.
+    coord_ref : astropy SkyCoord object
+        The reference coordinate, where the origin of the image locates.
+    origin : string (optional), default: lower
+        The origin of the image.
+    plot_units : string
+        The units of the plotted coordinates.
+
+    Returns
+    -------
+    extent : scalars (left, right, bottom, top)
+        The bounding box in data coordinates that the image will fill. The image
+        is stretched individually along x and y to fill the box.
+    """
+    u_ra, u_dec = wcs.wcs.cunit
+    u_ra  = u.Unit(u_ra)
+    u_dec = u.Unit(u_dec)
+    pix_corner = [[0, 0], [image_shape[1]-1, image_shape[0]-1]] # Note that row is dec and column is ra
+    coo_corner = wcs.wcs_pix2world(pix_corner, 1)
+    ra0, ra1   = coo_corner[:, 0] * u_ra
+    dec0, dec1 = coo_corner[:, 1] * u_dec
+    if coord_ref is None:
+        pix_center = [[image_shape[1]/2., image_shape[0]/2.]] # Note that row is dec and column is ra
+        coo_center = wcs.wcs_pix2world(pix_center, 1)
+        ra_cr  = coo_center[0, 0] * u_ra
+        dec_cr = coo_center[0, 1] * u_dec
+    else:
+        ra_cr  = coord_ref.ra
+        dec_cr = coord_ref.dec
+    ra_cd  = wcs.wcs.cdelt[0] * u_ra
+    dec_cd = wcs.wcs.cdelt[1] * u_dec
+    ra0  = ra0 - ra_cr - 0.5 * ra_cd
+    ra1  = ra1 - ra_cr + 0.5 * ra_cd
+    dec0 = dec0 - dec_cr - 0.5 * dec_cd
+    dec1 = dec1 - dec_cr + 0.5 * dec_cd
+    if origin == "lower":
+        extent = [ra0.to(plot_units).value, ra1.to(plot_units).value,
+                  dec0.to(plot_units).value, dec1.to(plot_units).value]
+    elif origin == "upper":
+        extent = [ra0.to(plot_units).value, ra1.to(plot_units).value,
+                  dec1.to(plot_units).value, dec0.to(plot_units).value]
+    else:
+        raise ValueError("The origin ({0}) is not recognised!".format(origin))
+    return extent
+
+def imshow_wcs(image, wcs, coord_ref=None, plot_units="arcsec", FigAx=None, **kwargs):
+    """
+    Plot the image with the WCS information.
+    """
+    if FigAx is None:
+        fig = plt.figure(figsize=(7, 7))
+        ax  = plt.gca()
+        FigAx = (fig, ax)
+    else:
+        fig, ax = FigAx
+    # If the extent is not provied, calculate the relative extent
+    if not "extent" in kwargs.keys():
+        origin = kwargs.get("origin", "upper")
+        kwargs["extent"] = get_extent_ref(wcs, image.shape, coord_ref, origin, plot_units)
+    im = ax.imshow(image, **kwargs)
+    return fig, ax, im
+
+def contour_wcs(image, wcs, coord_ref=None, plot_units="arcsec", FigAx=None, **kwargs):
+    """
+    Plot contour of the image with the WCS information.
+    """
+    if FigAx is None:
+        fig = plt.figure(figsize=(7, 7))
+        ax  = plt.gca()
+        FigAx = (fig, ax)
+    else:
+        fig, ax = FigAx
+    # If the extent is not provied, calculate the relative extent
+    if not "extent" in kwargs.keys():
+        origin = kwargs.get("origin", "upper")
+        kwargs["extent"] = get_extent_ref(wcs, image.shape, coord_ref, origin, plot_units)
+    im = ax.contour(image, **kwargs)
+    return fig, ax, im
