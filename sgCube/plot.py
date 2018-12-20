@@ -401,9 +401,8 @@ def get_extent_ref(wcs, image_shape, coord_ref=None, origin="lower", plot_units=
         The bounding box in data coordinates that the image will fill. The image
         is stretched individually along x and y to fill the box.
     """
-    u_ra, u_dec = wcs.wcs.cunit
-    u_ra  = u.Unit(u_ra)
-    u_dec = u.Unit(u_dec)
+    u_ra  = u.Unit(wcs.wcs.cunit[0])
+    u_dec = u.Unit(wcs.wcs.cunit[1])
     pix_corner = [[0, 0], [image_shape[1]-1, image_shape[0]-1]] # Note that row is dec and column is ra
     coo_corner = wcs.wcs_pix2world(pix_corner, 1)
     ra0, ra1   = coo_corner[:, 0] * u_ra
