@@ -247,16 +247,35 @@ def SkyRMS_pixel(data, mask=None, verbose=False):
         print("There are {0} pixels used!".format(np.sum(~mask)))
     return rms
 
-def CubeRMS_pixel(cube, mask=None, channel_list=None):
+def CubeRMS_pixel(cube, mask=None, nsample=10, channel_list=None):
     """
     Calculate the pixel rms of the individual channels of the data cube.  The
     function calculate the rms of the relevant channels and return the median of
     the sample rms's.
+
+    Parameters
+    ----------
+    cube : SpectralCube
+        The data cube.
+    mask : 2D bool array
+        The mask to exclude the pixels when calculating the rms of the data slice.
+    nsample : float, default: 10
+        The number of sampled data slice.
+    channel_list : list of int (optional)
+        The list of channel indices.  If given, the data slice with be selected
+        from this list.
+
+    Returns
+    -------
+    rms : Quantity
+        The rms of the data cube calculated as the median of the rms of the sampled
+        slices.  The unit follows the data cube.
     """
     if channel_list is None:
         channel_list = np.arange(cube.shape[0])
     rmsList = []
-    for i in channel_list:
+    sample_list = np.random.choice(channel_list, nsample)
+    for i in sample_list:
         rmsList.append(SkyRMS_pixel(cube[i, :, :].value, mask))
     rms = np.median(rmsList) * cube.unit
     return rms

@@ -141,7 +141,7 @@ def Plot_Channel_Maps(cube, nrows, ncols, mask=None, norm=None, contour_on=True,
         m0    = slab.moment(order=0)
         mask  = Mask_Segmentation(m0.value, wcs=m0.wcs)
     if norm is None:
-        chnrms = CubeRMS_pixel(cube.value, mask)
+        chnrms = CubeRMS_pixel(cube, mask).value
         norm = ImageNormalize(stretch=AsinhStretch(), vmin=-2*chnrms, vmax=5*chnrms)
     if figure_size is None:
         figure_size = (panel_size*ncols, panel_size*nrows)

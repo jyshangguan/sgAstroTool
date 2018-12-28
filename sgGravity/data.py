@@ -222,8 +222,9 @@ class GravityData(object):
             Print notes if True.
         """
         #-> Prior properties
-        self.__catglist_vis = ["SINGLE_SCI_VIS", "SINGLE_SCI_VIS_CALIBRATED", "SINGLE_CAL_VIS"]
-        self.__catglist_p2vmred = ["SINGLE_SCI_P2VMRED"]
+        self.__catglist_vis = ["SINGLE_SCI_VIS", "SINGLE_SCI_VIS_CALIBRATED", "SINGLE_CAL_VIS",
+                               "DUAL_SCI_VIS"]
+        self.__catglist_p2vmred = ["SINGLE_SCI_P2VMRED", "DUAL_SCI_P2VMRED"]
         self.ndim_ft = {
             "vis" : (1, 6, 5),
             "vis2": (1, 6, 5),
@@ -482,7 +483,8 @@ class GravityVis(object):
             Print notes if True.
         """
         #-> Prior properties
-        self.__catglist = ["SINGLE_SCI_VIS", "SINGLE_SCI_VIS_CALIBRATED", "SINGLE_CAL_VIS"]
+        self.__catglist = ["SINGLE_SCI_VIS", "SINGLE_SCI_VIS_CALIBRATED", "SINGLE_CAL_VIS",
+                           "DUAL_SCI_VIS"]
         self.ndim_ft = {
             "vis" : (1, 6, 5),
             "vis2": (1, 6, 5),
@@ -715,7 +717,7 @@ class GravityP2VMRED(object):
             Print notes if True.
         """
         #-> Prior properties
-        self.__catglist = ["SINGLE_SCI_P2VMRED"]
+        self.__catglist = ["SINGLE_SCI_P2VMRED", "DUAL_SCI_P2VMRED"]
         self.ndim_ft = {
             "vis" : (-1, 6, 5),
             "vis2": (-1, 6, 5),
