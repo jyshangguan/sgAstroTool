@@ -1,5 +1,4 @@
 import numpy as np
-#from astropy.coordinates import SkyCoord
 from astropy.convolution import Gaussian2DKernel
 from astropy.stats import gaussian_fwhm_to_sigma
 import astropy.units as u
@@ -8,6 +7,8 @@ from astropy.io import fits
 from photutils import deblend_sources, detect_sources, detect_threshold, source_properties
 from spectral_cube import Projection
 from radio_beam import Beam
+from sgSpec import rms_spectrum, median_spectrum, Gauss_Hermite
+from scipy.optimize import curve_fit
 
 def get_segmentation(data, snr_thrsh=3., npixels=5, kernel=None, deblend=False,
                      detect_threshold_param={}, gaussian2DParams={}):
@@ -457,3 +458,93 @@ def ReadMap(filename):
     beam = Beam(header["BMAJ"]*u.deg, header["BMIN"]*u.deg, header["BPA"]*u.deg)
     mom = Projection(data, wcs=WCS(header, naxis=2), beam=beam, unit=header["BUNIT"])
     return mom
+
+def GaussHermite(cube, mask, line_velrange=None, fit_velrange=None, p0_dict={},
+                 use_mommaps=None, verbose=False):
+    """
+    Calculate the map of Gauss-Hermite velocity fields.
+    """
+    #-> Prepare the fitting
+    if line_velrange is None:
+        line_velrange = [-300, 300]
+    if fit_velrange is None:
+        fit_velrange = [-500, 500]
+    nspc, nrow, ncol = cube.shape
+    wave = cube.spectral_axis.value
+    mapList = ["a", "b", "c", "h3", "h4"]
+    mapDict = {
+        "a": np.zeros([nrow, ncol]),
+        "b": np.zeros([nrow, ncol]),
+        "c": np.zeros([nrow, ncol]),
+        "h3": np.zeros([nrow, ncol]),
+        "h4": np.zeros([nrow, ncol]),
+    }
+    p0a = p0_dict.get("p0a", None) # amplitude
+    p0b = p0_dict.get("p0b", 0)  # velocity
+    p0c = p0_dict.get("p0c", 50) # sigma
+    p03 = p0_dict.get("p0h3", 0) # h3
+    p04 = p0_dict.get("p0h4", 0) # h4
+    p0z = p0_dict.get("p0z", None) # zero point
+    if not p0z is None:
+        mapDict["z"] = np.zeros([nrow, ncol])
+    if use_mommaps is None:
+        flag_mom = False
+    else:
+        m1, m2 = use_mommaps
+        flag_mom = True
+    for loop_r in range(nrow):
+        for loop_c in range(ncol):
+            if mask[loop_r, loop_c]:
+                #-> Get the data ready
+                spec = cube[:, loop_r, loop_c].value
+                rms  = rms_spectrum(wave, spec, flag=line_velrange)
+                if p0z is None:
+                    p0z = median_spectrum(wave, spec, flag=line_velrange)
+                unct = np.ones(nspc) * rms
+                fltr = (wave > fit_velrange[0]) & (wave < fit_velrange[1])
+                x = wave[fltr]
+                y = (spec - p0z)[fltr]
+                e = unct[fltr]
+                #-> Get the initial guess
+                if p0a is None:
+                    p00 = np.max(y)
+                else:
+                    p00 = p0a
+                if flag_mom:
+                    p01 = m1[loop_r, loop_c].value
+                    p02 = m2[loop_r, loop_c].value
+                else:
+                    p01 = p0b
+                    p02 = p0c
+                if np.isnan(p01):
+                    p01 = p0b
+                if np.isnan(p02):
+                    p02 = p0c
+                p_init = [p00, p01, p02, p03]
+                try:
+                    popt, pcov = curve_fit(Gauss_Hermite, x, y, p0=p_init, sigma=e)
+                except:
+                    if verbose:
+                        print("1st step: Cannot fit at [{0}, {1}]".format(loop_r, loop_c))
+                    for loop_k in range(5): # Provide the nan for spexals failed to fit
+                        kw = mapList[loop_k]
+                        mapDict[kw][loop_r, loop_c] = np.nan
+                    continue
+                p_init = [popt[0], popt[1], popt[2], popt[3], p04]
+                try:
+                    popt, pcov = curve_fit(Gauss_Hermite, x, y, p0=p_init, sigma=e)
+                except:
+                    if verbose:
+                        print("2st step: Cannot fit at [{0}, {1}]".format(loop_r, loop_c))
+                    for loop_k in range(5): # Provide the nan for spexals failed to fit
+                        kw = mapList[loop_k]
+                        mapDict[kw][loop_r, loop_c] = np.nan
+                    continue
+                for loop_k in range(5): # Fill the calculated values
+                    kw = mapList[loop_k]
+                    mapDict[kw][loop_r, loop_c] = popt[loop_k]
+            else:
+                for loop_k in range(5): # Provide the nan for spexals not fitted.
+                    kw = mapList[loop_k]
+                    mapDict[kw][loop_r, loop_c] = np.nan
+    return mapDict

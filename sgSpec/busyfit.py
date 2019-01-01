@@ -8,7 +8,7 @@ from scipy.optimize import minimize, brentq
 from scipy.stats import mode
 import matplotlib.pyplot as plt
 
-__all__ = ["busyfit", "rms_spectrum", "median_spectrum", "busyProfile", "busyFitProfile",
+__all__ = ["busyfit", "median_spectrum", "busyProfile", "busyFitProfile",
            "busyResTb2List", "lineParameters_BF", "busyFitPlot", "lineParPlot"]
 
 def busyfit(x, y, rms=None, p_init=None, relax=False, niter=None, verbose=False,

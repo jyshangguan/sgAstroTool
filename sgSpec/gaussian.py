@@ -26,6 +26,39 @@ def Fit_Double_Gaussian(x, y, **curve_fit_kws):
     perr = np.sqrt(np.diag(pcov))
     return popt, perr
 
+def Gauss_Hermite(x, a, b, c, h3=0., h4=0., z=0):
+    """
+    The Gauss-Hermite polynomial function.
+
+    Parameters
+    ----------
+    x : array
+        The variable.
+    a : float
+        The amplitude.
+    b : float
+        The mean.
+    c : float
+        The sigma.
+    h3 : float
+        The h3 parameter.
+    h4 : float
+        The h4 parameter.
+    z : float
+        The zero point.
+
+    Returns
+    -------
+    res : array
+        The Gauss-Hermite profile.
+    """
+    y = (x - b) / c
+    cmp_h3 = 2. * y**3 - 3. * y
+    cmp_h4 = 4. * y**4 - 12. * y**2 + 3
+    exp = -0.5 * y**2 * (1 + h3 / 3**0.5 * cmp_h3 + h4 / 24**0.5 * cmp_h4)
+    res = a * np.exp(exp) + z
+    return res
+
 #def lineParameters_DG(fit_result, perc=20, tol=0.01, resolution=10, verbose=False):
 #    """
 #    Convert the best-fit results to the line parameters.
