@@ -9,8 +9,7 @@ class GravitySet(object):
     """
     A set of gravity data observed at different times.
     """
-    def __init__(self, gd_list=None, file_list=None, insname=None, dataList=None,
-                 verbose=True):
+    def __init__(self, gd_list=None, file_list=None, verbose=True):
         """
         Parameters
         ----------
@@ -19,22 +18,17 @@ class GravitySet(object):
             from fits files will be ignored.
         file_list : list (optional)
             The list of fits file names.
-        insname : string (optional)
-            The keyword INSNAME that is used to select the data, case free.
-        dataList : list (optional)
-            The list of data keywords to read.
         verbose : bool, default: True
             Print notes if True.
         """
         if gd_list is None:
             assert not file_list is None
-            assert not insname is None
             gd_list = []
             for filename in file_list:
-                gd_list.append(GravityData(filename=filename, insname=insname, dataList=dataList))
+                gd_list.append(GravityData(filename=filename, verbose=verbose))
         else:
-            if verbose & (not ((file_list is None) & (insname is None) & (dataList is None))):
-                print("The gd_list is used so the other parameters are ignored!")
+            if verbose & (not file_list is None):
+                print("The gd_list is used so file_list is ignored!")
         self.gd_list = gd_list
 
     def get_Data_obsdate(self, obsdate, **kwargs):
@@ -144,9 +138,16 @@ class GravitySet(object):
         """
         return self.gd_list
 
-    def get_DataSeries_flagged(self, datakey="obsdate", obsdate=None, verbose=True, **kwargs):
+    def get_DataSeries_flagged(self, datakey, mask=None, insname="ft", obsdate=None,
+                               verbose=True):
         """
-        Get the time series of data identified by data_key.
+        Get the time series of data identified by data_key.  The function only
+        calls GravityData.get_data_flagged().
+
+        Parameters
+        ----------
+        datakey : string
+            The keyword of the data to be extracted.
         """
         if obsdate is None:
             gd_list = self.gd_list
@@ -154,23 +155,29 @@ class GravitySet(object):
             gd_list = self.get_Data_obsdate(obsdate)
         dataList = []
         for gd in gd_list:
-            if datakey == "obsdate":
-                if verbose:
-                    print("No flag is applied (unless I implement the time flag)!")
-                dataList.append(gd.obsdate)
-            elif datakey in gd.get_data_keys():
-                dataList.append(gd.get_data_flagged(datakey, **kwargs))
-            elif datakey in gd.get_qc_keys():
-                if verbose:
-                    print("No flag is applied (unless I implement the time flag)!")
-                dataList.append(gd.get_qc(datakey, **kwargs))
-            else:
-                raise ValueError("Cannot find the data ({0})!".format(datakey))
+            dataList.append(gd.get_data_flagged(datakey, mask=mask, insname=insname,
+                                                verbose=verbose))
         return dataList
 
-    def get_DataSeries(self, datakey="obsdate", obsdate=None, verbose=True):
+    def get_DataSeries(self, datakey="obsdate", insname=None, obsdate=None, verbose=True):
         """
         Get the time series of data identified by data_key.
+
+        Parameters
+        ----------
+        datakey : string
+            The keyword of the data to be extracted.
+        insname : string (optional)
+            The instrument name, only necessary when get_data() is used.
+        obsdate : datetime object or string (list)
+            Following what is used in get_Data_obsdate().
+        verbose : bool, default: True
+            Print notes if True.
+
+        Returns
+        -------
+        dataList : list
+            The list of data.
         """
         if obsdate is None:
             gd_list = self.gd_list
@@ -180,12 +187,11 @@ class GravitySet(object):
         for gd in gd_list:
             if datakey == "obsdate":
                 dataList.append(gd.obsdate)
-            elif datakey in gd.get_data_keys():
-                dataList.append(gd.get_data(datakey))
             elif datakey in gd.get_qc_keys():
                 dataList.append(gd.get_qc(datakey))
             else:
-                raise ValueError("Cannot find the data ({0})!".format(datakey))
+                assert not insname is None
+                dataList.append(gd.get_data(datakey, insname=insname, verbose=verbose))
         return dataList
 
     def __getitem__(self, key):
@@ -204,20 +210,15 @@ class GravityData(object):
     """
     The object of gravity data of a single observation.
     """
-    def __init__(self, data_dict=None, filename=None, insname=None, dataList=None,
-                 verbose=True):
+    def __init__(self, hdulist=None, filename=None, verbose=True):
         """
         Parameters
         ----------
-        data_dict : dict (optional)
-            The dictionary of data obtained from readfits_ins().  If data_dict is
-            provided, the parameters to read from a fits file will be ignored.
+        hdulist : dict (optional)
+            The hdulist of data.  If hdulist is provided, the parameters to read
+            from a fits file will be ignored.
         filename : string (optional)
             The fits file name.
-        insname : string (optional)
-            The keyword INSNAME that is used to select the data, case free.
-        dataList : list (optional)
-            The list of data keywords to read.
         verbose : bool, default: True
             Print notes if True.
         """
@@ -225,50 +226,54 @@ class GravityData(object):
         self.__catglist_vis = ["SINGLE_SCI_VIS", "SINGLE_SCI_VIS_CALIBRATED", "SINGLE_CAL_VIS",
                                "DUAL_SCI_VIS"]
         self.__catglist_p2vmred = ["SINGLE_SCI_P2VMRED", "DUAL_SCI_P2VMRED"]
-        self.ndim_ft = {
-            "vis" : (1, 6, 5),
-            "vis2": (1, 6, 5),
-            "flux": (1, 4, 5),
-            "t3"  : (1, 4, 5),
+        self.dims = {
+            "BASELINE": 6,
+            "TELESCOPE": 4,
+            "TRIANGLE": 4,
+            "CHANNEL_FT": 5,
+            "CHANNEL_SC": 210,
+            "OI_VIS:STA_INDEX": 2,
+            "OI_VIS2:STA_INDEX": 2,
+            "OI_FLUX:STA_INDEX": 1,
         }
-        self.ndim_sc = {
-            "vis" : (1, 6, 210),
-            "vis2": (1, 6, 210),
-            "flux": (1, 4, 210),
-            "t3"  : (1, 4, 210),
+        self.dim2 = {
+            "OI_VIS" : self.dims["BASELINE"],
+            "OI_VIS2": self.dims["BASELINE"],
+            "OI_FLUX": self.dims["TELESCOPE"],
+            "OI_T3": self.dims["TRIANGLE"],
         }
-        #-> Read in the fits file data_dict is None
-        if data_dict is None:
+        #-> Read in the fits file hdulist is None
+        if hdulist is None:
             assert not filename is None
-            assert not insname is None
-            data_dict = readfits_ins(filename, insname, dataList)
+            hdulist = fits.open(filename, mode='readonly')
         else:
-            if verbose & (not ((filename is None) & (insname is None) & (dataList is None))):
-                print("The data_dict is used so the other parameters are ignored!")
+            if verbose & (not (filename is None)):
+                print("The hdulist is used so the other parameters are ignored!")
         #-> Information from the header
-        header = data_dict["HEADER"]
+        header = hdulist[0].header
         self.header = header
         #--> Basical information
         self.catg = header.get("HIERARCH ESO PRO CATG", None)
-        self.insname = data_dict["INSNAME"]
         self.obsdate = datetime.datetime.strptime(header["DATE-OBS"], '%Y-%m-%dT%H:%M:%S')
         self.object = header["OBJECT"]
         self.ra=header['RA']
         self.dec=header['DEC']
         #-> Get the data
         if self.catg in self.__catglist_vis:
-            self.data = GravityVis(data_dict, verbose=verbose)
+            self.data = GravityVis(hdulist, verbose=verbose)
         elif self.catg in self.__catglist_p2vmred:
-            self.data = GravityP2VMRED(data_dict, verbose=verbose)
+            self.data = GravityP2VMRED(hdulist, verbose=verbose)
         else:
             raise ValueError("The catg ({0}) is not supported!".format(self.catg))
 
-    def get_time_dit(self, unit_read="s"):
+    def get_time_dit(self, insname="ft", unit_read="s"):
         """
         Get the integration time of one DIT of the data.
 
         Parameters
         ----------
+        insname : string
+            The instrument name, "ft" for fringe tracking or "sc" for science.
         unit_read : string, default: us
             The unit of the read-in data.  The default value of GRAVITY data is
             microsecond.
@@ -278,73 +283,110 @@ class GravityData(object):
         dit : Astropy Quantity
             The integration time of one DIT.
         """
-        if self.insname == "GRAVITY_SC":
+        insname = "GRAVITY_{0}".format(insname.upper())
+        if insname == "GRAVITY_SC":
             det_num = "DET2"
-        elif self.insname == "GRAVITY_FT":
+        elif insname == "GRAVITY_FT":
             det_num = "DET3"
         else:
-            raise ValueError("Cannot recognize the insname ({0})!".format(self.insname))
+            raise ValueError("Cannot recognize the insname ({0})!".format(insname))
         keyword = "HIERARCH ESO {0} SEQ1 DIT".format(det_num)
         dit = self.header.get(keyword) * u.Unit(unit_read)
         return dit
 
-    def get_time_start(self, unit_read="us"):
+    def get_time_start(self, insname="ft", unit_read="us", verbose=False):
         """
         Get the start time of the data (first time of VISTIME).
 
         Parameters
         ----------
+        insname : string
+            The instrument name, "ft" for fringe tracking or "sc" for science.
         unit_read : string, default: us
             The unit of the read-in data.  The default value of GRAVITY data is
             microsecond.
+        verbose : bool
+            Print more information if True.
 
         Returns
         -------
         time_start : Astropy Quantity
             The start time of the data.
         """
-        vis_time = self.get_data("vis_time")
-        time_start = vis_time[0, 0] * u.Unit(unit_read)
+        vis_time = self.get_data("OI_VIS:TIME", insname=insname, verbose=verbose)
+        if self.catg in self.__catglist_p2vmred:
+            time_start = vis_time[0, 0] * u.Unit(unit_read)
+        else:
+            raise ValueError("The start time for {0} is meaningless!".format(self.catg))
         return time_start
 
-    def get_time_end(self, unit_read="us"):
+    def get_time_end(self, insname="ft", unit_read="us", verbose=False):
         """
         Get the end time of the data (last time of VISTIME).
 
         Parameters
         ----------
+        insname : string
+            The instrument name, "ft" for fringe tracking or "sc" for science.
         unit_read : string, default: us
             The unit of the read-in data.  The default value of GRAVITY data is
             microsecond.
+        verbose : bool
+            Print more information if True.
 
         Returns
         -------
-        time_start : Astropy Quantity
-            The start time of the data.
+        time_end : Astropy Quantity
+            The end time of the data.
         """
-        vis_time = self.get_data("vis_time")
-        time_end = vis_time[-1, 0] * u.Unit(unit_read)
+        vis_time = self.get_data("OI_VIS:TIME", insname=insname, verbose=verbose)
+        if self.catg in self.__catglist_p2vmred:
+            time_end = vis_time[-1, 0] * u.Unit(unit_read)
+        else:
+            raise ValueError("The end time for {0} is meaningless!".format(self.catg))
         return time_end
 
-    def ruv_mas(self, flag=True, flag_kwargs={}):
+    def ruv_mas(self, insname="ft", verbose=False):
         """
         Calculate the uv distance with units: milli-arcsec^1.
+
+        Parameters
+        ----------
+        insname : string
+            The instrument name, "ft" for fringe tracking or "sc" for science.
+        verbose : bool
+            Print more information if True.
+
+        Returns
+        -------
+        ruv : array
+            The UV distance of each baseline and channel, units: milli-arcsec^-1.
         """
-        u, v = self.uv_mas(flag=flag, flag_kwargs=flag_kwargs)
+        u, v = self.uv_mas(insname=insname, verbose=verbose)
         ruv = np.sqrt(u**2 + v**2)
         return ruv
 
-    def uv_mas(self, flag=True, flag_kwargs={}):
+    def uv_mas(self, insname="ft", verbose=False):
         """
         Calculate the uv coordinates with units: milli-arcsec^1.
+
+        Parameters
+        ----------
+        insname : string
+            The instrument name, "ft" for fringe tracking or "sc" for science.
+        verbose : bool
+            Print more information if True.
+
+        Returns
+        -------
+        (u_mas, v_mas) : tuple of arrays
+            The UV coordinates of each baseline and channel, units: milli-arcsec^-1.
         """
-        if flag:
-            u = self.get_data_flagged("vis_ucoord", **flag_kwargs)
-            v = self.get_data_flagged("vis_vcoord", **flag_kwargs)
-        else:
-            u = self.get_data_fulldim("vis_ucoord")
-            v = self.get_data_fulldim("vis_vcoord")
-        wavelength = self.get_data("wavelength")
+        if not insname.upper() in ["SC", "FT"]:
+            raise ValueError("The insname ({0}) is not recognized!".format(insname))
+        u = self.get_data_fulldim("OI_VIS:UCOORD", insname=insname, verbose=verbose)
+        v = self.get_data_fulldim("OI_VIS:VCOORD", insname=insname, verbose=verbose)
+        wavelength = self.get_data("OI_WAVELENGTH:EFF_WAVE", insname=insname, verbose=verbose)
         u_mas = u / wavelength / (180. / np.pi * 3.6e6)
         v_mas = v / wavelength / (180. / np.pi * 3.6e6)
         return (u_mas, v_mas)
@@ -358,9 +400,10 @@ class GravityData(object):
         baseline_index : int
             The index of the baseline, 0-5.
         """
-        tel_name = self.data.data_dict["tel_name"]
-        sta_index = list(self.data.data_dict["sta_index"])
-        bsl_code = list(self.data.data_dict["vis_baseline"][0, baseline_index, :])
+        tel_name = self.get_data("OI_ARRAY:TEL_NAME", insname="aux")
+        sta_index = list(self.get_data("OI_ARRAY:STA_INDEX", insname="aux"))
+        vis_station = self.get_data("OI_VIS:STA_INDEX", insname="sc") # SC and FT provides the same information.
+        bsl_code = list(vis_station[0, baseline_index, :])
         bsl_list = []
         for bsl in bsl_code:
             bsl_list.append(tel_name[sta_index.index(bsl)])
@@ -375,68 +418,115 @@ class GravityData(object):
         baseline_index : int
             The index of the baseline, 0-5.
         """
-        tel_name = self.data.data_dict["tel_name"]
-        sta_index = list(self.data.data_dict["sta_index"])
-        bsl_code = list(self.data.data_dict["vis_baseline"][0, baseline_index, :])
+        sta_index = list(self.get_data("OI_ARRAY:STA_INDEX", insname="aux"))
+        vis_station = self.get_data("OI_VIS:STA_INDEX", insname="sc") # SC and FT provides the same information.
+        bsl_code = list(vis_station[0, baseline_index, :])
         bsl_list = []
         for bsl in bsl_code:
             bsl_list.append(sta_index.index(bsl))
         return bsl_list
 
-    def get_data_keys(self):
+    def get_info(self, verbose=True):
         """
-        Get the keys of the data_dict.
+        Get the information of the data structure.
         """
-        return self.data.data_dict.keys()
+        insList = ["GRAVITY_SC", "GRAVITY_FT", "AUXILIARY"]
+        extDict = {
+            "ins_list": insList
+        }
+        for ins in insList:
+            extDict[ins] = []
+        hdulist = self.data.hdulist
+        for hdu in hdulist:
+            if hdu.name == "PRIMARY":
+                continue
+            ins = hdu.header.get("INSNAME", "AUXILIARY")
+            colNameList = []
+            if not hdu.is_image:
+                for col in hdu.columns:
+                    colNameList.append(col.name)
+            extDict[ins].append((hdu.name, colNameList))
+        if verbose:
+            for ins in insList:
+                print("[{0}]".format(ins))
+                for hduTp in extDict[ins]:
+                    print("**{0}:".format(hduTp[0]))
+                    if len(hduTp[1]) != 0:
+                        print("    {0}".format(", ".join(hduTp[1])))
+                    else:
+                        print("    [Image]")
+                print("\n")
+        return extDict
 
-    def get_data(self, keyword):
+    def get_data(self, keyword, insname="ft", verbose=False):
         """
         Get the data identified by the keyword.
 
         Parameters
         ----------
         keyword : string
-            The keyword of the data.
+            The keyword of the data, "extName:datName", e.g., "OI_VIS:VISDATA".
+            The keyword is case free.
+        insname : string
+            The instrument name, "ft" for fringe tracking, "sc" for science, or
+            "aux" for auxiliary data without INSNAME keyword.
+        verbose : bool
+            Print more information if True.
 
         Returns
         -------
         data : array
             The data array or None if the keyword is not found.
         """
-        data = self.data.get_data(keyword)
+        data = self.data.get_data(keyword, insname=insname, verbose=verbose)
         return data
 
-    def get_data_fulldim(self, keyword):
+    def get_data_fulldim(self, keyword, insname="ft", verbose=False):
         """
         Get the data expanded in full dimention.
 
+        Parameters
+        ----------
         keyword : string
-            The keyword of the data.
+            The keyword of the data, "extName:datName", e.g., "OI_VIS:VISDATA".
+            The keyword is case free.
+        insname : string
+            The instrument name, "ft" for fringe tracking or "sc" for science.
+        verbose : bool
+            Print more information if True.
 
         Returns
         -------
         data_array: array
             The data array expanded to its full dimension.
         """
-        data_fulldim = self.data.get_data_fulldim(keyword)
+        data_fulldim = self.data.get_data_fulldim(keyword, insname=insname, verbose=verbose)
         return data_fulldim
 
-    def get_data_flagged(self, keyword, **kwargs):
+    def get_data_flagged(self, keyword, mask=None, insname="ft", verbose=False):
         """
         Get the masked data according to the flag.
 
         Parameters
         ----------
         keyword : string
-            The keyword of the data.
-        **kwargs : Additional parameters for GravityP2VMRED objects.
+            The keyword of the data, "extName:datName", e.g., "OI_VIS:VISDATA".
+            The keyword is case free.
+        mask : bool array (optional)
+            The specified mask.  If None, the "REJECTION_FLAG" will be used to
+            flag the data.
+        insname : string
+            The instrument name, "ft" for fringe tracking or "sc" for science.
+        verbose : bool
+            Print more information if True.
 
         Returns
         -------
         data_flagged: masked array
             The masked data array.
         """
-        data_flagged = self.data.get_data_flagged(keyword, **kwargs)
+        data_flagged = self.data.get_data_flagged(keyword, mask=mask, insname=insname,
+                                                  verbose=verbose)
         return data_flagged
 
     def get_qc_keys(self):
@@ -465,56 +555,53 @@ class GravityVis(object):
     """
     The object of gravity visibility data.
     """
-    def __init__(self, data_dict=None, filename=None, insname=None, dataList=None,
-                 verbose=True):
+    def __init__(self, hdulist=None, filename=None, verbose=True):
         """
         Parameters
         ----------
-        data_dict : dict (optional)
-            The dictionary of data obtained from readfits_ins().  If data_dict is
-            provided, the parameters to read from a fits file will be ignored.
+        hdulist : dict (optional)
+            The hdulist of data.  If hdulist is provided, the parameters to read
+            from a fits file will be ignored.
         filename : string (optional)
             The fits file name.
-        insname : string (optional)
-            The keyword INSNAME that is used to select the data, case free.
-        dataList : list (optional)
-            The list of data keywords to read.
         verbose : bool, default: True
             Print notes if True.
         """
         #-> Prior properties
         self.__catglist = ["SINGLE_SCI_VIS", "SINGLE_SCI_VIS_CALIBRATED", "SINGLE_CAL_VIS",
                            "DUAL_SCI_VIS"]
-        self.ndim_ft = {
-            "vis" : (1, 6, 5),
-            "vis2": (1, 6, 5),
-            "flux": (1, 4, 5),
-            "t3"  : (1, 4, 5),
+        self.dims = {
+            "BASELINE": 6,
+            "TELESCOPE": 4,
+            "TRIANGLE": 4,
+            "CHANNEL_FT": 5,
+            "CHANNEL_SC": 210,
+            "OI_VIS:STA_INDEX": 2,
+            "OI_VIS2:STA_INDEX": 2,
+            "OI_FLUX:STA_INDEX": 1,
         }
-        self.ndim_sc = {
-            "vis" : (1, 6, 210),
-            "vis2": (1, 6, 210),
-            "flux": (1, 4, 210),
-            "t3"  : (1, 4, 210),
+        self.dim2 = {
+            "OI_VIS" : self.dims["BASELINE"],
+            "OI_VIS2": self.dims["BASELINE"],
+            "OI_FLUX": self.dims["TELESCOPE"],
+            "OI_T3": self.dims["TRIANGLE"],
         }
-        self.datakey_list = ["vis", "vis2", "t3", "flux"]
-        self.auxkey_list = ["station", "baseline", "triangle"]
-        #-> Read in the fits file data_dict is None
-        if data_dict is None:
+        self.datakey_list = ["OI_VIS", "OI_VIS2", "OI_T3", "OI_FLUX"]
+        #-> Read in the fits file hdulist is None
+        if hdulist is None:
             assert not filename is None
-            assert not insname is None
-            data_dict = readfits_ins(filename, insname, dataList)
+            hdulist = fits.open(filename, mode='readonly')
         else:
-            if verbose & (not ((filename is None) & (insname is None) & (dataList is None))):
-                print("The data_dict is used so the other parameters are ignored!")
+            if verbose & (not (filename is None)):
+                print("The hdulist is used so the other parameters are ignored!")
+        self.hdulist = hdulist
         #-> Information from the header
-        header = data_dict["HEADER"]
+        header = hdulist[0].header
         self.header = header
         #--> Basical information
         self.catg = header.get("HIERARCH ESO PRO CATG", None)
         if verbose & (not self.catg in self.__catglist):
             print("The catg ({0}) has not been tested before!".format(self.catg))
-        self.insname = data_dict["INSNAME"]
         self.obsdate = datetime.datetime.strptime(header["DATE-OBS"], "%Y-%m-%dT%H:%M:%S")
         self.object = header["OBJECT"]
         self.ra=header['RA']
@@ -542,141 +629,137 @@ class GravityVis(object):
             "ambi_tau0": [header.get("HIERARCH ESO ISS AMBI TAU0 START", np.nan),
                           header.get("HIERARCH ESO ISS AMBI TAU0 END", np.nan)],
          }
-        #-> Data content
-        wavelength = data_dict["OI_WAVELENGTH"]["EFF_WAVE"]
-        visdata = data_dict["OI_VIS"]
-        vis2data = data_dict["OI_VIS2"]
-        t3data = data_dict["OI_T3"]
-        fluxdata = data_dict["OI_FLUX"]
-        self.data_dict = {
-            #--> General data
-            "wavelength": wavelength,
-            "bandwidth": data_dict["OI_WAVELENGTH"]["EFF_BAND"],
-            "tel_name": data_dict["TEL_NAME"],
-            "sta_name": data_dict["STA_NAME"],
-            "sta_index": data_dict["STA_INDEX"],
-            #--> Vis data
-            "vis_flag"    : visdata["FLAG"],
-            "vis_baseline": visdata["STA_INDEX"],
-            "vis_ucoord"  : visdata["UCOORD"],
-            "vis_vcoord"  : visdata["VCOORD"],
-            "vis_time"    : visdata["TIME"],
-            "vis_int_time": visdata["INT_TIME"],
-            "vis_amp"     : visdata["VISAMP"],
-            "vis_amp_err" : visdata["VISAMPERR"],
-            "vis_phi"     : visdata["VISPHI"],
-            "vis_phi_err" : visdata["VISPHIERR"],
-            "vis_data"    : visdata["VISDATA"],
-            "vis_err"     : visdata["VISERR"],
-            "vis_r"       : visdata["RVIS"],
-            "vis_r_err"   : visdata["RVISERR"],
-            "vis_i"       : visdata["IVIS"],
-            "vis_i_err"   : visdata["IVISERR"],
-            #--> Vis2 data
-            "vis2_flag"    : vis2data["FLAG"],
-            "vis2_baseline": vis2data["STA_INDEX"],
-            "vis2_ucoord"  : vis2data["UCOORD"],
-            "vis2_vcoord"  : vis2data["VCOORD"],
-            "vis2_data"    : vis2data["VIS2DATA"],
-            "vis2_err"     : vis2data["VIS2ERR"],
-            #--> T3 data
-            "t3_flag"    : t3data["FLAG"],
-            "t3_triangle": t3data["STA_INDEX"],
-            "t3_u1coord" : t3data["U1COORD"],
-            "t3_v1coord" : t3data["V1COORD"],
-            "t3_u2coord" : t3data["U2COORD"],
-            "t3_v2coord" : t3data["V2COORD"],
-            "t3_amp"     : t3data["T3AMP"],
-            "t3_amp_err" : t3data["T3AMPERR"],
-            "t3_phi"     : t3data["T3PHI"],
-            "t3_phi_err" : t3data["T3PHIERR"],
-            #--> Flux data
-            "flux_flag"   : fluxdata["FLAG"],
-            "flux_station": fluxdata["STA_INDEX"],
-            "flux_data"   : fluxdata["FLUX"],
-            "flux_err"    : fluxdata["FLUXERR"],
-        }
 
-    def get_data(self, keyword):
+    def get_data(self, keyword, insname="ft", verbose=False):
         """
-        Get the data identified by the keyword.
+        Get a copy of the data identified by the keyword.
 
         Parameters
         ----------
         keyword : string
-            The keyword of the data.
+            The keyword of the data, "extName:datName", e.g., "OI_VIS:VISDATA".
+            The keyword is case free.
+        insname : string
+            The instrument name, "ft" for fringe tracking, "sc" for science, or
+            "aux" for auxiliary data without INSNAME keyword.
+        verbose : bool
+            Print more information if True.
 
         Returns
         -------
         data : array
             The data array or None if the keyword is not found.
         """
-        data = self.data_dict.get(keyword, None)
-        if not data is None:
-            data = data.copy()
+        if ":" in keyword:
+            keyword = keyword.upper()
+            extName, datName = keyword.split(":")
+        else:
+            raise ValueError("The keyword ({0}) is not recognized!".format(keyword))
+        hdulist = self.hdulist
+        insname = insname.upper()
+        if not ((insname == "FT") | (insname == "SC") | (insname == "AUX")):
+            errortext = "The insname ({0}) is incorrect!  It should be ft, sc, or aux, case free.".format(insname)
+            raise ValueError(errortext)
+        insname = "GRAVITY_{0}".format(insname)
+        extCount = 0
+        for loop in range(len(hdulist)):
+            hdu = hdulist[loop]
+            #--> Use INSNAME to determine the data to include
+            if (hdu.name == extName) & (insname in str(hdu.header.get('INSNAME', "GRAVITY_AUX"))):
+                hdudata = hdu.data
+                extCount += 1
+        if extCount == 0:
+            if verbose:
+                print("The extension ({0}) is not found!".format(extName))
+            return None
+        elif extCount > 1:
+            raise ValueError("There are {0} same extensions {1} for {2}!".format(extCount, extName, insname))
+        try:
+            data = hdudata[datName].copy()
+        except:
+            if verbose:
+                print("The data ({0}) is not found in the extension {0}.".format(datName, extName))
+            return None
         return data
 
-    def get_data_fulldim(self, keyword):
+    def get_data_fulldim(self, keyword, insname="ft", verbose=False):
         """
-        Get the data expanded in full dimention.
+        Get the data expanded in full dimention (baseline/telescope/triangle, channel).
 
         keyword : string
-            The keyword of the data.
+            The keyword of the data, "extName:datName", e.g., "OI_VIS:VISDATA".
+            The keyword is case free.
+        insname : string
+            The instrument name, "ft" for fringe tracking or "sc" for science.
+        verbose : bool
+            Print more information if True.
 
         Returns
         -------
         data_array: array
             The data array expanded to its full dimension.
         """
-        kw_prf, kw_par = keyword.split("_")[:2]
-        if not kw_prf in self.datakey_list:
-            raise ValueError("The keyword ({0}) cannot be expanded!".format(keyword))
-        if kw_par in self.auxkey_list:
-            raise ValueError("The keyword ({0}) cannot be expanded!".format(keyword))
-        if self.insname == "GRAVITY_FT":
-            ndim = self.ndim_ft[kw_prf]
-        elif self.insname == "GRAVITY_SC":
-            ndim = self.ndim_sc[kw_prf]
+        if ":" in keyword:
+            keyword = keyword.upper()
+            extName, datName = keyword.split(":")
         else:
-            raise ValueError("Cannot recognize self.insname ({0})!".format(self.insname))
-        data_array = self.get_data(keyword)
+            raise ValueError("The keyword ({0}) is not recognized!".format(keyword))
+        if not extName in self.datakey_list:
+            raise ValueError("The extension ({0}) is not supported to be expanded!".format(extName))
+        else:
+            ndim2 = self.dim2[extName]
+        insname = insname.upper()
+        if (insname == "FT") or (insname == "SC"):
+            nchn = self.dims["CHANNEL_{0}".format(insname)]
+        else:
+            raise ValueError("Cannot recognize insname ({0})!".format(insname))
+        data_array = self.get_data(keyword, insname=insname, verbose=verbose)
         if data_array is None:
             raise ValueError("The keyword ({0}) is not recognized!".format(keyword))
         dshape = data_array.shape
-        if dshape == ndim:
-            return data_array
-        else:
-            if (len(dshape) == 2) & (dshape[0] == ndim[0]) & (dshape[1] == ndim[1]):
-                data_array_ext = np.zeros(ndim, dtype=np.float)
-                for loop in range(ndim[2]):
-                    data_array_ext[:, :, loop] = data_array
-                return data_array_ext
+        if len(dshape) == 2:
+            if dshape[1] == nchn:
+                data_array_full = data_array
             else:
-                raise ValueError("The shape of {0} ({1}) is not correct ({2})!".format(keyword, dshape, ndim))
+                raise ValueError("The second dimension is not channel!")
+        else:
+            if (len(dshape) == 1) & (dshape[0] == ndim2):
+                data_array_full = np.zeros((dshape[0], nchn), dtype=np.float)
+                for loop in range(nchn):
+                    data_array_full[:, loop] = data_array
+            else:
+                raise ValueError("The shape of {0} ({1}) is not correct ({2},)!".format(keyword, dshape, ndim2))
+        return data_array_full
 
-    def get_data_flagged(self, keyword):
+    def get_data_flagged(self, keyword, mask=None, insname="ft", verbose=False):
         """
-        Get the masked data according to the flag.
+        Get the masked data according to the flag in the same extension of the data.
 
         Parameters
         ----------
         keyword : string
-            The keyword of the data.
+            The keyword of the data, "extName:datName", e.g., "OI_VIS:VISDATA".
+            The keyword is case free.
+        mask : bool array (optional)
+            The specified mask.  If None, the "REJECTION_FLAG" will be used to
+            flag the data.
+        insname : string
+            The instrument name, "ft" for fringe tracking or "sc" for science.
+        verbose : bool
+            Print more information if True.
 
         Returns
         -------
         data_flagged: masked array
             The masked data array.
         """
-        kw_prf, kw_par = keyword.split("_")[:2]
-        if not kw_prf in self.datakey_list:
-            raise ValueError("The keyword ({0}) cannot be flagged!".format(keyword))
-        if kw_par in self.auxkey_list:
-            raise ValueError("The keyword ({0}) cannot be flagged!".format(keyword))
-        data_array = self.get_data_fulldim(keyword)
-        kw_flag = "{0}_flag".format(kw_prf)
-        flag = self.get_data_fulldim(kw_flag)
-        data_flagged = np.ma.array(data_array, mask=flag)
+        data_array = self.get_data_fulldim(keyword, insname=insname, verbose=verbose)
+        extName, datName = keyword.split(":")
+        if mask is None:
+            mask = self.get_data("{0}:flag".format(extName), insname=insname, verbose=verbose)
+        else:
+            assert data_array.shape == mask.shape
+        data_flagged = np.ma.array(data_array, mask=mask)
         return data_flagged
 
     def get_qc(self, keyword):
@@ -699,55 +782,52 @@ class GravityP2VMRED(object):
     """
     The object of gravity p2vmred data.
     """
-    def __init__(self, data_dict=None, filename=None, insname=None, dataList=None,
-                 verbose=True):
+    def __init__(self, hdulist=None, filename=None, verbose=True):
         """
         Parameters
         ----------
-        data_dict : dict (optional)
-            The dictionary of data obtained from readfits_ins().  If data_dict is
-            provided, the parameters to read from a fits file will be ignored.
+        hdulist : dict (optional)
+            The hdulist of data.  If hdulist is provided, the parameters to read
+            from a fits file will be ignored.
         filename : string (optional)
             The fits file name.
-        insname : string (optional)
-            The keyword INSNAME that is used to select the data, case free.
-        dataList : list (optional)
-            The list of data keywords to read.
         verbose : bool, default: True
             Print notes if True.
         """
         #-> Prior properties
         self.__catglist = ["SINGLE_SCI_P2VMRED", "DUAL_SCI_P2VMRED"]
-        self.ndim_ft = {
-            "vis" : (-1, 6, 5),
-            "vis2": (-1, 6, 5),
-            "flux": (-1, 4, 5),
-            "t3"  : (-1, 4, 5),
+        self.dims = {
+            "BASELINE": 6,
+            "TELESCOPE": 4,
+            "TRIANGLE": 4,
+            "CHANNEL_FT": 5,
+            "CHANNEL_SC": 210,
+            "OI_VIS:STA_INDEX": 2,
+            "OI_VIS2:STA_INDEX": 2,
+            "OI_FLUX:STA_INDEX": 1,
         }
-        self.ndim_sc = {
-            "vis" : (-1, 6, 210),
-            "vis2": (-1, 6, 210),
-            "flux": (-1, 4, 210),
-            "t3"  : (-1, 4, 210),
+        self.dim2 = {
+            "OI_VIS" : self.dims["BASELINE"],
+            "OI_VIS2": self.dims["BASELINE"],
+            "OI_FLUX": self.dims["TELESCOPE"],
+            "OI_T3": self.dims["TRIANGLE"],
         }
-        self.datakey_list = ["vis", "vis2", "t3", "flux"]
-        self.auxkey_list = ["station", "baseline", "triangle"]
-        #-> Read in the fits file data_dict is None
-        if data_dict is None:
+        self.datakey_list = ["OI_VIS", "OI_VIS2", "OI_T3", "OI_FLUX"]
+        #-> Read in the fits file hdulist is None
+        if hdulist is None:
             assert not filename is None
-            assert not insname is None
-            data_dict = readfits_ins(filename, insname, dataList)
+            hdulist = fits.open(filename, mode='readonly')
         else:
-            if verbose & (not ((filename is None) & (insname is None) & (dataList is None))):
-                print("The data_dict is used so the other parameters are ignored!")
+            if verbose & (not (filename is None)):
+                print("The hdulist is used so the other parameters are ignored!")
+        self.hdulist = hdulist
         #-> Information from the header
-        header = data_dict["HEADER"]
+        header = hdulist[0].header
         self.header = header
         #--> Basical information
         self.catg = header.get("HIERARCH ESO PRO CATG", None)
         if verbose & (not self.catg in self.__catglist):
             print("The catg ({0}) has not been tested before!".format(self.catg))
-        self.insname = data_dict["INSNAME"]
         self.obsdate = datetime.datetime.strptime(header["DATE-OBS"], "%Y-%m-%dT%H:%M:%S")
         self.object = header["OBJECT"]
         self.ra=header['RA']
@@ -769,136 +849,142 @@ class GravityP2VMRED(object):
             "ambi_tau0": [header.get("HIERARCH ESO ISS AMBI TAU0 START", np.nan),
                           header.get("HIERARCH ESO ISS AMBI TAU0 END", np.nan)],
          }
-        #-> Data content
-        wavelength = data_dict["OI_WAVELENGTH"]["EFF_WAVE"]
-        visdata = data_dict["OI_VIS"]
-        fluxdata = data_dict["OI_FLUX"]
-        self.data_dict = {
-            #--> General data
-            "wavelength": wavelength,
-            "bandwidth": data_dict["OI_WAVELENGTH"]["EFF_BAND"],
-            "tel_name": data_dict["TEL_NAME"],
-            "sta_name": data_dict["STA_NAME"],
-            "sta_index": data_dict["STA_INDEX"],
-            #--> Vis data
-            "vis_flag": visdata["FLAG"],
-            "vis_baseline": visdata["STA_INDEX"],
-            "vis_time": visdata["TIME"],
-            "vis_int_time": visdata["INT_TIME"],
-            "vis_ucoord": visdata["UCOORD"],
-            "vis_vcoord": visdata["VCOORD"],
-            "vis_data": visdata["VISDATA"],
-            "vis_err": visdata["VISERR"],
-            "vis_self_ref": visdata["SELF_REF"],
-            "vis_phase_ref": visdata.get("PHASE_REF", None),
-            "vis_f1f2": visdata["F1F2"],
-            "vis_rejection_flag": visdata["REJECTION_FLAG"],
-            "vis_gdelay": visdata["GDELAY"],
-            "vis_gdelay_boot": visdata["GDELAY_BOOT"],
-            "vis_snr": visdata["SNR"],
-            "vis_snr_boot": visdata["SNR_BOOT"],
-            #--> Flux data
-            "flux_flag": fluxdata["FLAG"],
-            "flux_station": fluxdata["STA_INDEX"],
-            "flux_data": fluxdata["FLUX"],
-            "flux_err": fluxdata["FLUXERR"],
-        }
-        #--> Align the coherent flux according to the reference phase
-        if self.insname == "GRAVITY_FT":
-            phref = self.data_dict["vis_self_ref"]
-        elif self.insname == "GRAVITY_SC":
-            phref = self.data_dict["vis_phase_ref"]
-        else:
-            phref = None
-        if not phref is None:
-            rvis = np.real(visdata["VISDATA"])
-            ivis = np.imag(visdata["VISDATA"])
-            rvis_align = np.cos(phref) * rvis - np.sin(phref) * ivis
-            ivis_align = np.sin(phref) * rvis + np.cos(phref) * ivis
-            self.data_dict["vis_data_aligned"] = rvis_align + 1j*ivis_align
 
-    def get_data(self, keyword):
+    def get_data(self, keyword, insname="ft", verbose=False):
         """
         Get the data identified by the keyword.
 
         Parameters
         ----------
         keyword : string
-            The keyword of the data.
+            The keyword of the data, "extName:datName", e.g., "OI_VIS:VISDATA".
+            The keyword is case free.
+        insname : string
+            The instrument name, "ft" for fringe tracking, "sc" for science, or
+            "aux" for auxiliary data without INSNAME keyword.
+        verbose : bool
+            Print more information if True.
 
         Returns
         -------
         data : array
             The data array or None if the keyword is not found.
         """
-        data = self.data_dict.get(keyword, None)
-        if not data is None:
-            data = data.copy()
+        if ":" in keyword:
+            keyword = keyword.upper()
+            extName, datName = keyword.split(":")
+        else:
+            raise ValueError("The keyword ({0}) is not recognized!".format(keyword))
+        hdulist = self.hdulist
+        insname = insname.upper()
+        if not ((insname == "FT") | (insname == "SC") | (insname == "AUX")):
+            errortext = "The insname ({0}) is incorrect!  It should be ft, sc, or aux, case free.".format(insname)
+            raise ValueError(errortext)
+        insname = "GRAVITY_{0}".format(insname)
+        extCount = 0
+        for loop in range(len(hdulist)):
+            hdu = hdulist[loop]
+            #--> Use INSNAME to determine the data to include
+            if (hdu.name == extName) & (insname in str(hdu.header.get('INSNAME', "GRAVITY_AUX"))):
+                hdudata = hdu.data
+                extCount += 1
+        if extCount == 0:
+            if verbose:
+                print("The extension ({0}) is not found!".format(extName))
+            return None
+        elif extCount > 1:
+            raise ValueError("There are {0} same extensions {1} for {2}!".format(extCount, extName, insname))
+        try:
+            data = hdudata[datName].copy()
+        except:
+            if verbose:
+                print("The data ({0}) is not found in the extension {0}.".format(datName, extName))
+            return None
+        dim2 = self.dim2.get(extName, None)
+        if not dim2 is None:
+            ndim = len(data.shape)
+            if ndim == 1:
+                data = data.reshape(-1, dim2)
+            elif ndim == 2:
+                data = data.reshape(-1, dim2, data.shape[1])
+            else:
+                raise ValueError("The shape of {0}:{1} ({2}) is not managable!".format(extName, datName, data.shape))
         return data
 
-    def get_data_fulldim(self, keyword):
+    def get_data_fulldim(self, keyword, insname="ft", verbose=False):
         """
-        Get the data expanded in full dimention.
+        Get the data expanded in full dimention (time, baseline/telescope/triangle, channel).
 
         keyword : string
-            The keyword of the data.
+            The keyword of the data, "extName:datName", e.g., "OI_VIS:VISDATA".
+            The keyword is case free.
+        insname : string
+            The instrument name, "ft" for fringe tracking or "sc" for science.
+        verbose : bool
+            Print more information if True.
 
         Returns
         -------
         data_array: array
             The data array expanded to its full dimension.
         """
-        kw_prf, kw_par = keyword.split("_")[:2]
-        if not kw_prf in self.datakey_list:
-            raise ValueError("The keyword ({0}) cannot be expanded!".format(keyword))
-        if kw_par in self.auxkey_list:
-            raise ValueError("The keyword ({0}) cannot be expanded!".format(keyword))
-        if self.insname == "GRAVITY_FT":
-            ndim = self.ndim_ft[kw_prf]
-        elif self.insname == "GRAVITY_SC":
-            ndim = self.ndim_sc[kw_prf]
+        if ":" in keyword:
+            keyword = keyword.upper()
+            extName, datName = keyword.split(":")
         else:
-            raise ValueError("Cannot recognize self.insname ({0})!".format(self.insname))
-        data_array = self.get_data(keyword)
+            raise ValueError("The keyword ({0}) is not recognized!".format(keyword))
+        if not extName in self.datakey_list:
+            raise ValueError("The extension ({0}) is not supported to be expanded!".format(extName))
+        else:
+            ndim2 = self.dim2[extName]
+        insname = insname.upper()
+        if (insname == "FT") or (insname == "SC"):
+            nchn = self.dims["CHANNEL_{0}".format(insname)]
+        else:
+            raise ValueError("Cannot recognize insname ({0})!".format(insname))
+        data_array = self.get_data(keyword, insname=insname, verbose=verbose)
         if data_array is None:
             raise ValueError("The keyword ({0}) is not recognized!".format(keyword))
         dshape = data_array.shape
-        if dshape[1:] == ndim[1:]: # The 0th dimension of P2VMRED data is not fixed.
-            return data_array
-        else:
-            if (len(dshape) == 2) & (dshape[1] == ndim[1]):
-                data_array_ext = np.zeros((dshape[0], dshape[1], ndim[2]), dtype=np.float)
-                for loop in range(ndim[2]):
-                    data_array_ext[:, :, loop] = data_array
-                return data_array_ext
+        if len(dshape) == 3: # The 0th dimension of P2VMRED data is not fixed.
+            if dshape[2] == nchn:
+                data_array_full = data_array
             else:
-                raise ValueError("The shape of {0} ({1}) is not correct ({2})!".format(keyword, dshape, ndim))
+                raise ValueError("The third dimension is not channel!")
+        else:
+            if (len(dshape) == 2) & (dshape[1] == ndim2):
+                data_array_full = np.zeros((dshape[0], dshape[1], nchn), dtype=np.float)
+                for loop in range(nchn):
+                    data_array_full[:, :, loop] = data_array
+            else:
+                raise ValueError("The shape of {0} ({1}) is not correct ({2})!".format(keyword, dshape, (-1, ndim2)))
+        return data_array_full
 
-    def get_data_flagged(self, keyword, mask=None):
+    def get_data_flagged(self, keyword, mask=None, insname="ft", verbose=False):
         """
         Get the masked data according to the rejection flag.
 
         Parameters
         ----------
         keyword : string
-            The keyword of the data.
+            The keyword of the data, "extName:datName", e.g., "OI_VIS:VISDATA".
+            The keyword is case free.
         mask : bool array (optional)
             The specified mask.  If None, the "REJECTION_FLAG" will be used to
             flag the data.
+        insname : string
+            The instrument name, "ft" for fringe tracking or "sc" for science.
+        verbose : bool
+            Print more information if True.
 
         Returns
         -------
         data_flagged: masked array
             The masked data array.
         """
-        kw_prf, kw_par = keyword.split("_")[:2]
-        if not kw_prf in self.datakey_list:
-            raise ValueError("The keyword ({0}) cannot be flagged!".format(keyword))
-        if kw_par in self.auxkey_list:
-            raise ValueError("The keyword ({0}) cannot be flagged!".format(keyword))
-        data_array = self.get_data_fulldim(keyword)
+        data_array = self.get_data_fulldim(keyword, insname=insname, verbose=verbose) # Error will be raised if the keyword is wrong.
         if mask is None:
-            mask = self.get_data_fulldim("vis_rejection_flag") > 0
+            mask = self.get_data_fulldim("oi_vis:rejection_flag", insname=insname, verbose=verbose) > 0
         else:
             assert data_array.shape == mask.shape
         data_flagged = np.ma.array(data_array, mask=mask)
@@ -993,7 +1079,6 @@ def readfits_ins(filename, insname, dataList=None):
                 elif ndim == 2:
                     darray = darray.reshape(-1, nreshape, darray.shape[1])
                 else:
-                    ValueError("The shape of {0}-{1} ({2}) is not managable!".format(kw,
-                               dkw, darray.shape))
+                    raise ValueError("The shape of {0}-{1} ({2}) is not managable!".format(kw, dkw, darray.shape))
             outDict[kw][dkw] = darray
     return outDict
