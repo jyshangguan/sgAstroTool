@@ -3,7 +3,7 @@ import numpy as np
 from astropy.io import fits
 from astropy import units as u
 
-__all__ = ["GravitySet", "GravityData", "GravityVis", "GravityP2VMRED", "readfits_ins"]
+__all__ = ["GravitySet", "GravityData", "GravityVis", "GravityP2VMRED"]
 
 class GravitySet(object):
     """
@@ -206,6 +206,7 @@ class GravitySet(object):
         """
         return len(self.gd_list)
 
+
 class GravityData(object):
     """
     The object of gravity data of a single observation.
@@ -225,7 +226,7 @@ class GravityData(object):
         #-> Prior properties
         self.__catglist_vis = ["SINGLE_SCI_VIS", "SINGLE_SCI_VIS_CALIBRATED", "SINGLE_CAL_VIS",
                                "DUAL_SCI_VIS"]
-        self.__catglist_p2vmred = ["SINGLE_SCI_P2VMRED", "DUAL_SCI_P2VMRED"]
+        self.__catglist_p2vmred = ["SINGLE_SCI_P2VMRED", "DUAL_SCI_P2VMRED", "SINGLE_CAL_P2VMRED"]
         self.dims = {
             "BASELINE": 6,
             "TELESCOPE": 4,
@@ -403,7 +404,12 @@ class GravityData(object):
         tel_name = self.get_data("OI_ARRAY:TEL_NAME", insname="aux")
         sta_index = list(self.get_data("OI_ARRAY:STA_INDEX", insname="aux"))
         vis_station = self.get_data("OI_VIS:STA_INDEX", insname="sc") # SC and FT provides the same information.
-        bsl_code = list(vis_station[0, baseline_index, :])
+        if self.catg in self.__catglist_p2vmred:
+            bsl_code = vis_station[0, baseline_index, :]
+        elif self.catg in self.__catglist_vis:
+            bsl_code = vis_station[baseline_index, :]
+        else:
+            raise ValueError("Self.catg ({0}) is not recognized!".format(self.catg))
         bsl_list = []
         for bsl in bsl_code:
             bsl_list.append(tel_name[sta_index.index(bsl)])
@@ -420,7 +426,12 @@ class GravityData(object):
         """
         sta_index = list(self.get_data("OI_ARRAY:STA_INDEX", insname="aux"))
         vis_station = self.get_data("OI_VIS:STA_INDEX", insname="sc") # SC and FT provides the same information.
-        bsl_code = list(vis_station[0, baseline_index, :])
+        if self.catg in self.__catglist_p2vmred:
+            bsl_code = vis_station[0, baseline_index, :]
+        elif self.catg in self.__catglist_vis:
+            bsl_code = vis_station[baseline_index, :]
+        else:
+            raise ValueError("Self.catg ({0}) is not recognized!".format(self.catg))
         bsl_list = []
         for bsl in bsl_code:
             bsl_list.append(sta_index.index(bsl))
@@ -795,7 +806,7 @@ class GravityP2VMRED(object):
             Print notes if True.
         """
         #-> Prior properties
-        self.__catglist = ["SINGLE_SCI_P2VMRED", "DUAL_SCI_P2VMRED"]
+        self.__catglist = ["SINGLE_SCI_P2VMRED", "DUAL_SCI_P2VMRED", "SINGLE_CAL_P2VMRED"]
         self.dims = {
             "BASELINE": 6,
             "TELESCOPE": 4,
@@ -1004,81 +1015,3 @@ class GravityP2VMRED(object):
         The qc data or None if the keyword is not found.
         """
         return self.qc_dict.get(keyword, None)
-
-
-
-reshapeDict = {
-    "OI_VIS": 6, # Number of baselines
-    "OI_VIS2": 6, # Number of baselines
-    "OI_FLUX": 4, # Number of telescopes
-    "OI_T3": 4, # Number of triangles
-}
-def readfits_ins(filename, insname, dataList=None):
-    """
-    Read the fits file with the select insname.
-
-    Parameters
-    ----------
-    filename : string
-        The fits file name.
-    insname : string
-        The keyword INSNAME that is used to select the data, case free.
-    dataList : list (optional)
-        The list of data keywords to read.
-
-    Returns
-    -------
-    outDict : dict
-        The dict of data read from the file.
-    """
-    hdulist = fits.open(filename, mode='readonly')
-    header = hdulist[0].header
-    insname = insname.upper()
-    #-> Make sure the data is in single mode
-    assert header["HIERARCH ESO INS POLA MODE"] == "COMBINED"
-    outDict = {
-        "HEADER": header,
-        "INSNAME": insname,
-        "TEL_NAME": hdulist["OI_ARRAY"].data["TEL_NAME"],
-        "STA_NAME": hdulist["OI_ARRAY"].data["STA_NAME"],
-        "STA_INDEX": hdulist["OI_ARRAY"].data["STA_INDEX"],
-    }
-    #-> Choose the proper extensions
-    dataDict = {}
-    for loop in range(len(hdulist)):
-        hdu = hdulist[loop]
-        hduname = hdu.name
-        #--> Use INSNAME to determine the data to include
-        if insname in str(hdu.header.get('INSNAME',[])):
-            if hduname in dataDict.keys():
-                raise ValueError("{0} is repeating!".format(hduname))
-            dataDict[hduname] = {
-                "extension": loop,
-                "reshape": reshapeDict.get(hduname, 0),
-            }
-    if dataList is None:
-        dataList = dataDict.keys()
-    if len(dataList) == 0:
-        raise RuntimeError("There is not data to be extracted!")
-    #-> Go through the necessary extensions
-    for kw in dataList:
-        #--> Report error if the kw is not found in the data.
-        ext = dataDict[kw]["extension"]
-        nreshape = dataDict[kw]["reshape"]
-        outDict[kw] = {
-            "HEADER": hdulist[ext].header
-        }
-        hdudata = hdulist[ext].data
-        #--> Go through all the columns
-        for dkw in hdudata.columns.names:
-            darray = hdudata[dkw]
-            if nreshape > 0:
-                ndim = len(darray.shape)
-                if ndim == 1:
-                    darray = darray.reshape(-1, nreshape)
-                elif ndim == 2:
-                    darray = darray.reshape(-1, nreshape, darray.shape[1])
-                else:
-                    raise ValueError("The shape of {0}-{1} ({2}) is not managable!".format(kw, dkw, darray.shape))
-            outDict[kw][dkw] = darray
-    return outDict

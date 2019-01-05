@@ -3,7 +3,7 @@ from .data import GravityData
 
 __all__ = ["gravi_vis_average_bootstrap"]
 
-def gravi_vis_average_bootstrap(p2vmred_ft, p2vmred_sc, mask=None, nboot=20, nseg_default=100):
+def gravi_vis_average_bootstrap(p2vmred, mask=None, nboot=20, nseg_default=100):
     """
     Calculate average the P2VMRED data to obtain the SCIVIS data.  The function
     works with the same procedure as the function gravi_vis_average_bootstrap()
@@ -25,23 +25,23 @@ def gravi_vis_average_bootstrap(p2vmred_ft, p2vmred_sc, mask=None, nboot=20, nse
     """
     #-> Prepare the data
     #-#> Select the correct frames
-    dit_sc = p2vmred_sc.get_time_dit()
-    time_start = p2vmred_sc.get_time_start() - dit_sc * 0.5
-    time_end   = p2vmred_sc.get_time_end() + dit_sc * 0.5
-    timeList = p2vmred_ft.get_data("vis_time")[:, 0]
+    dit_sc = p2vmred.get_time_dit(insname="sc")
+    time_start = p2vmred.get_time_start(insname="sc") - dit_sc * 0.5
+    time_end   = p2vmred.get_time_end(insname="sc") + dit_sc * 0.5
+    timeList = p2vmred.get_data("OI_VIS:TIME", insname="ft")[:, 0]
     fltr_time = (timeList > time_start.to("us").value) & (timeList < time_end.to("us").value)
-    rejflag = p2vmred_ft.get_data("vis_rejection_flag")
+    rejflag = p2vmred.get_data("OI_VIS:REJECTION_FLAG", insname="ft")
     if not mask is None:
         rejflag[mask] = 999
     rejflag = rejflag[fltr_time, :]
-    visdata = p2vmred_ft.get_data("vis_data")[fltr_time, :, :]
-    viserr  = p2vmred_ft.get_data("vis_err")[fltr_time, :, :]
-    selref  = p2vmred_ft.get_data("vis_self_ref")[fltr_time, :, :]
-    f1f2    = p2vmred_ft.get_data("vis_f1f2")[fltr_time, :, :]
-    ucoord  = p2vmred_ft.get_data("vis_ucoord")[fltr_time, :]
-    vcoord  = p2vmred_ft.get_data("vis_vcoord")[fltr_time, :]
-    inttime = p2vmred_ft.get_data("vis_int_time")[fltr_time, :]
-    wavelength = p2vmred_ft.get_data("wavelength")
+    visdata = p2vmred.get_data("OI_VIS:VISDATA", insname="ft")[fltr_time, :, :]
+    viserr  = p2vmred.get_data("OI_VIS:VISERR", insname="ft")[fltr_time, :, :]
+    selref  = p2vmred.get_data("OI_VIS:SELF_REF", insname="ft")[fltr_time, :, :]
+    f1f2    = p2vmred.get_data("OI_VIS:F1F2", insname="ft")[fltr_time, :, :]
+    ucoord  = p2vmred.get_data("OI_VIS:UCOORD", insname="ft")[fltr_time, :]
+    vcoord  = p2vmred.get_data("OI_VIS:VCOORD", insname="ft")[fltr_time, :]
+    inttime = p2vmred.get_data("OI_VIS:INT_TIME", insname="ft")[fltr_time, :]
+    wavelength = p2vmred.get_data("OI_WAVELENGTH:EFF_WAVE", insname="ft")
     #-> Segment the data into nseg blocks
     visR_seg = []
     visI_seg = []
