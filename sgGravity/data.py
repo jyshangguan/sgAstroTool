@@ -267,6 +267,12 @@ class GravityData(object):
         else:
             raise ValueError("The catg ({0}) is not supported!".format(self.catg))
 
+    def plot_vis2(self):
+        """
+        Plot the vis2
+        """
+        return None
+
     def get_time_dit(self, insname="ft", unit_read="s"):
         """
         Get the integration time of one DIT of the data.
@@ -616,7 +622,7 @@ class GravityData(object):
         Write the hdulist of the data.
         """
         self.data.hdulist.writeto(filename, **kwargs)
-        
+
     def filename(self):
        """
        Get the file name of the data hdulist.
