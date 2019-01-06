@@ -561,6 +561,68 @@ class GravityData(object):
         """
         return self.data.get_qc(keyword)
 
+    def get_hdulist(self):
+        """
+        Get the hdulist of the data.
+        """
+        return self.data.hdulist
+
+    def update_data(self, keyword, newdata, insname="ft"):
+        """
+        Update the data in the hdulist.
+
+        Parameters
+        ----------
+        keyword : string
+            The keyword of the data, "extName:datName", e.g., "OI_VIS:VISDATA".
+            The keyword is case free.
+        newdata : array
+            The new data to be used.
+        insname : string
+            The instrument name, "ft" for fringe tracking, "sc" for science, or
+            "aux" for auxiliary data without INSNAME keyword.
+        verbose : bool
+            Print more information if True.
+        """
+        if ":" in keyword:
+            keyword = keyword.upper()
+            extName, datName = keyword.split(":")
+        else:
+            raise ValueError("The keyword ({0}) is not recognized!".format(keyword))
+        hdulist = self.get_hdulist()
+        insname = insname.upper()
+        if not ((insname == "FT") | (insname == "SC") | (insname == "AUX")):
+            errortext = "The insname ({0}) is incorrect!  It should be ft, sc, or aux, case free.".format(insname)
+            raise ValueError(errortext)
+        insname = "GRAVITY_{0}".format(insname)
+        extCount = 0
+        for loop in range(len(hdulist)):
+            hdu = hdulist[loop]
+            #--> Use INSNAME to determine the data to include
+            if (hdu.name == extName) & (insname in str(hdu.header.get('INSNAME', "GRAVITY_AUX"))):
+                hdudata = hdu.data
+                extCount += 1
+        if extCount == 0:
+            if verbose:
+                print("The extension ({0}) is not found!".format(extName))
+            return None
+        elif extCount > 1:
+            raise ValueError("There are {0} same extensions {1} for {2}!".format(extCount, extName, insname))
+        assert hdudata[datName].shape == newdata.shape
+        hdudata[datName] = newdata
+
+    def writeto(self, filename, **kwargs):
+        """
+        Write the hdulist of the data.
+        """
+        self.data.hdulist.writeto(filename, **kwargs)
+        
+    def filename(self):
+       """
+       Get the file name of the data hdulist.
+       """
+       return self.data.hdulist.filename()
+
 
 class GravityVis(object):
     """
