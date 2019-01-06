@@ -27,7 +27,7 @@ fileName  = options.filename
 dirName   = options.dirname
 subName   = options.subname
 gdly_thrd = eval(options.gdly_thrd) # Threshold of GDELAY
-f1f2_thrd = eval(options.f1f2_thrd) # Threshold of F1F2
+f1f2_thrd = options.f1f2_thrd # Threshold of F1F2
 visloss   = options.visloss # Flag to correct the visibility loss
 overwrite = options.overwrite # Overwrite the FITS file
 verbose   = not options.quite # Print the auxiliary information
@@ -42,8 +42,6 @@ else:
         print("[GRAV_FLAG: NOTICE] There are {0} files found!".format(nFile))
 
 #-> Setup the directory to save the data
-if dirName is None:
-    dirName = "{0}/flagged".format("/".join(fileName.split("/")[:-1]))
 if not os.path.isdir(dirName):
     os.mkdir(dirName)
 elif len(glob.glob("{0}/*".format(dirName))) > 0:
@@ -55,14 +53,10 @@ elif len(glob.glob("{0}/*".format(dirName))) > 0:
 else:
     pass
 
-#-> Setup the subscript of the output file
-if subName is None:
-    subName = "flagged"
-
-#-> Setup the GDELAY threshold
-if gdly_thrd is None:
-    gdly_thrd = 40 # micron
-
+#-> Setup the f1f2_thrd
+if not f1f2_thrd is None:
+    f1f2_thrd = eval(f1f2_thrd)
+    
 #-> Summarize the treatments
 if verbose:
     print("[GRAV_FLAG: SUMMARY]")
