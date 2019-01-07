@@ -475,6 +475,31 @@ class GravityData(object):
                 print("\n")
         return extDict
 
+    def get_extension(self, keyword, insname="ft", multiple=False, verbose=False):
+        """
+        Get the hdu according to the keyword and the insname.
+
+        Parameters
+        ----------
+        keyword : string
+            The keyword of the extension, e.g., "OI_VIS", case free.
+        insname : string
+            The instrument name, "ft" for fringe tracking, "sc" for science, or
+            "aux" for auxiliary data without INSNAME keyword.
+        multiple : bool
+            Allow the output list to have more than one extensions, if True.
+        verbose : bool
+            Print more information if True.
+
+        Returns
+        -------
+        extList : list
+            The list of hdu(s) matched with the keyword.
+        """
+        extList = self.data.get_extension(keyword, insname=insname, multiple=multiple,
+                                          verbose=verbose)
+        return extList
+
     def get_data(self, keyword, insname="ft", verbose=False):
         """
         Get the data identified by the keyword.
@@ -573,7 +598,7 @@ class GravityData(object):
         """
         return self.data.hdulist
 
-    def update_data(self, keyword, newdata, insname="ft"):
+    def update_data(self, keyword, newdata, insname="ft", verbose=False):
         """
         Update the data in the hdulist.
 
@@ -595,25 +620,8 @@ class GravityData(object):
             extName, datName = keyword.split(":")
         else:
             raise ValueError("The keyword ({0}) is not recognized!".format(keyword))
-        hdulist = self.get_hdulist()
-        insname = insname.upper()
-        if not ((insname == "FT") | (insname == "SC") | (insname == "AUX")):
-            errortext = "The insname ({0}) is incorrect!  It should be ft, sc, or aux, case free.".format(insname)
-            raise ValueError(errortext)
-        insname = "GRAVITY_{0}".format(insname)
-        extCount = 0
-        for loop in range(len(hdulist)):
-            hdu = hdulist[loop]
-            #--> Use INSNAME to determine the data to include
-            if (hdu.name == extName) & (insname in str(hdu.header.get('INSNAME', "GRAVITY_AUX"))):
-                hdudata = hdu.data
-                extCount += 1
-        if extCount == 0:
-            if verbose:
-                print("The extension ({0}) is not found!".format(extName))
-            return None
-        elif extCount > 1:
-            raise ValueError("There are {0} same extensions {1} for {2}!".format(extCount, extName, insname))
+        hduList = self.get_extension(extName, insname=insname, multiple=False, verbose=verbose)
+        hdudata = hduList[0].data
         assert hdudata[datName].shape == newdata.shape
         hdudata[datName] = newdata
 
@@ -709,6 +717,46 @@ class GravityVis(object):
                           header.get("HIERARCH ESO ISS AMBI TAU0 END", np.nan)],
          }
 
+    def get_extension(self, keyword, insname="ft", multiple=False, verbose=False):
+        """
+        Get the hdu according to the keyword and the insname.
+
+        Parameters
+        ----------
+        keyword : string
+            The keyword of the extension, e.g., "OI_VIS", case free.
+        insname : string
+            The instrument name, "ft" for fringe tracking, "sc" for science, or
+            "aux" for auxiliary data without INSNAME keyword.
+        multiple : bool
+            Allow the output list to have more than one extensions, if True.
+        verbose : bool
+            Print more information if True.
+
+        Returns
+        -------
+        extList : list
+            The list of hdu(s) matched with the keyword.
+        """
+        hdulist = self.hdulist
+        keyword = keyword.upper()
+        insname = insname.upper()
+        if not ((insname == "FT") | (insname == "SC") | (insname == "AUX")):
+            errortext = "The insname ({0}) is incorrect!  It should be ft, sc, or aux, case free.".format(insname)
+            raise KeyError(errortext)
+        insname = "GRAVITY_{0}".format(insname)
+        extList = []
+        for hdu in hdulist:
+            #--> Use INSNAME to determine the data to include
+            if (hdu.name == keyword) & (insname in str(hdu.header.get('INSNAME', "GRAVITY_AUX"))):
+                extList.append(hdu)
+        extCount = len(extList)
+        if extCount == 0:
+            raise KeyError("The extension ({0}) is not found!".format(keyword))
+        elif (extCount > 1) & (not multiple):
+            raise KeyError("There are {0} same extensions {1} for {2}!".format(extCount, keyword, insname))
+        return extList
+
     def get_data(self, keyword, insname="ft", verbose=False):
         """
         Get a copy of the data identified by the keyword.
@@ -734,27 +782,9 @@ class GravityVis(object):
             extName, datName = keyword.split(":")
         else:
             raise ValueError("The keyword ({0}) is not recognized!".format(keyword))
-        hdulist = self.hdulist
-        insname = insname.upper()
-        if not ((insname == "FT") | (insname == "SC") | (insname == "AUX")):
-            errortext = "The insname ({0}) is incorrect!  It should be ft, sc, or aux, case free.".format(insname)
-            raise ValueError(errortext)
-        insname = "GRAVITY_{0}".format(insname)
-        extCount = 0
-        for loop in range(len(hdulist)):
-            hdu = hdulist[loop]
-            #--> Use INSNAME to determine the data to include
-            if (hdu.name == extName) & (insname in str(hdu.header.get('INSNAME', "GRAVITY_AUX"))):
-                hdudata = hdu.data
-                extCount += 1
-        if extCount == 0:
-            if verbose:
-                print("The extension ({0}) is not found!".format(extName))
-            return None
-        elif extCount > 1:
-            raise ValueError("There are {0} same extensions {1} for {2}!".format(extCount, extName, insname))
+        hduList = self.get_extension(extName, insname=insname, multiple=False, verbose=verbose)
         try:
-            data = hdudata[datName].copy()
+            data = hduList[0].data[datName].copy()
         except:
             if verbose:
                 print("The data ({0}) is not found in the extension {0}.".format(datName, extName))
@@ -929,6 +959,46 @@ class GravityP2VMRED(object):
                           header.get("HIERARCH ESO ISS AMBI TAU0 END", np.nan)],
          }
 
+    def get_extension(self, keyword, insname="ft", multiple=False, verbose=False):
+        """
+        Get the hdu according to the keyword and the insname.
+
+        Parameters
+        ----------
+        keyword : string
+            The keyword of the extension, e.g., "OI_VIS", case free.
+        insname : string
+            The instrument name, "ft" for fringe tracking, "sc" for science, or
+            "aux" for auxiliary data without INSNAME keyword.
+        multiple : bool
+            Allow the output list to have more than one extensions, if True.
+        verbose : bool
+            Print more information if True.
+
+        Returns
+        -------
+        extList : list
+            The list of hdu(s) matched with the keyword.
+        """
+        hdulist = self.hdulist
+        keyword = keyword.upper()
+        insname = insname.upper()
+        if not ((insname == "FT") | (insname == "SC") | (insname == "AUX")):
+            errortext = "The insname ({0}) is incorrect!  It should be ft, sc, or aux, case free.".format(insname)
+            raise KeyError(errortext)
+        insname = "GRAVITY_{0}".format(insname)
+        extList = []
+        for hdu in hdulist:
+            #--> Use INSNAME to determine the data to include
+            if (hdu.name == keyword) & (insname in str(hdu.header.get('INSNAME', "GRAVITY_AUX"))):
+                extList.append(hdu)
+        extCount = len(extList)
+        if extCount == 0:
+            raise KeyError("The extension ({0}) is not found!".format(keyword))
+        elif (extCount > 1) & (not multiple):
+            raise KeyError("There are {0} same extensions {1} for {2}!".format(extCount, keyword, insname))
+        return extList
+
     def get_data(self, keyword, insname="ft", verbose=False):
         """
         Get the data identified by the keyword.
@@ -954,27 +1024,9 @@ class GravityP2VMRED(object):
             extName, datName = keyword.split(":")
         else:
             raise ValueError("The keyword ({0}) is not recognized!".format(keyword))
-        hdulist = self.hdulist
-        insname = insname.upper()
-        if not ((insname == "FT") | (insname == "SC") | (insname == "AUX")):
-            errortext = "The insname ({0}) is incorrect!  It should be ft, sc, or aux, case free.".format(insname)
-            raise ValueError(errortext)
-        insname = "GRAVITY_{0}".format(insname)
-        extCount = 0
-        for loop in range(len(hdulist)):
-            hdu = hdulist[loop]
-            #--> Use INSNAME to determine the data to include
-            if (hdu.name == extName) & (insname in str(hdu.header.get('INSNAME', "GRAVITY_AUX"))):
-                hdudata = hdu.data
-                extCount += 1
-        if extCount == 0:
-            if verbose:
-                print("The extension ({0}) is not found!".format(extName))
-            return None
-        elif extCount > 1:
-            raise ValueError("There are {0} same extensions {1} for {2}!".format(extCount, extName, insname))
+        hduList = self.get_extension(extName, insname=insname, multiple=False, verbose=verbose)
         try:
-            data = hdudata[datName].copy()
+            data = hduList[0].data[datName].copy()
         except:
             if verbose:
                 print("The data ({0}) is not found in the extension {0}.".format(datName, extName))
