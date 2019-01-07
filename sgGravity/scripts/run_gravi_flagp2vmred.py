@@ -95,7 +95,7 @@ for gp2vm in gp2vmSet:
         fltr_gooddata = fltr_gooddata & fltr_f1f2
         prihdr["history"] = "OI_VIS_FT:REJECTION_FLAG is revised to select F1F2>{0}.".format(f1f2_thrd)
         vishdr["history"] = "REJECTION_FLAG is revised to select F1F2>{0}.".format(f1f2_thrd)
-    rejflag[~fltr_gooddata] = 999 # Asign the non-gooddata a non-zero flag
+    rejflag[~fltr_gooddata] = 2 # Asign the non-gooddata a non-zero flag, the value to use is not clear...
     gp2vm.update_data("oi_vis:rejection_flag", rejflag.reshape(-1), insname="ft")
     #-> Correct the visibility loss
     if visloss:
