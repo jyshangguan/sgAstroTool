@@ -72,6 +72,9 @@ nchn = 5
 gp2vmSet = sgGravity.GravitySet(file_list=fileList)
 count = 0
 for gp2vm in gp2vmSet:
+    #-> Get the headers
+    prihdr = gp2vm.get_extension("primary", insname="aux")[0].header
+    vishdr = gp2vm.get_extension("oi_vis", insname="ft")[0].header
     #-> Revise the rejection_flag
     rejflag = gp2vm.get_data("oi_vis:rejection_flag", insname="ft")
     #--> Select on GDELAY
@@ -79,6 +82,8 @@ for gp2vm in gp2vmSet:
         print("[GRAV_FLAG: NOTICE] |GDELAY|<{0}".format(gdly_thrd))
     gdlyList = gp2vm.get_data("oi_vis:gdelay", insname="ft") * 1e6 # Convert the units to micron
     fltr_gooddata = np.abs(gdlyList) < gdly_thrd
+    prihdr["history"] = "OI_VIS_FT:REJECTION_FLAG is revised to select |GDELAY|<{0} micron.".format(gdly_thrd)
+    vishdr["history"] = "REJECTION_FLAG is revised to select |GDELAY|<{0} micron.".format(gdly_thrd)
     #--> Select on F1F2
     if f1f2_thrd is None:
         pass # No selection on F1F2
@@ -88,6 +93,8 @@ for gp2vm in gp2vmSet:
         f1f2List = gp2vm.get_data("oi_vis:f1f2", insname="ft")
         fltr_f1f2 = np.sum((f1f2List[:, :, 1:-1] > f1f2_thrd), axis=2) == (nchn - 2) # Ignore the two channels on the end
         fltr_gooddata = fltr_gooddata & fltr_f1f2
+        prihdr["history"] = "OI_VIS_FT:REJECTION_FLAG is revised to select F1F2>{0}.".format(f1f2_thrd)
+        vishdr["history"] = "REJECTION_FLAG is revised to select F1F2>{0}.".format(f1f2_thrd)
     rejflag[~fltr_gooddata] = 999 # Asign the non-gooddata a non-zero flag
     gp2vm.update_data("oi_vis:rejection_flag", rejflag.reshape(-1), insname="ft")
     #-> Correct the visibility loss
@@ -96,6 +103,8 @@ for gp2vm in gp2vmSet:
             print("[GRAV_FLAG: NOTICE] Correct the visibility loss!")
         visdata = sgGravity.correct_visdata(gp2vm)
         gp2vm.update_data("oi_vis:visdata", visdata.reshape(-1, nchn), insname="ft")
+        prihdr["history"] = "OI_VIS_FT:VISDATA is revised to correct the visibility loss."
+        vishdr["history"] = "VISDATA is revised to correct the visibility loss."
     #-> Write the file
     fitsName = gp2vm.filename()
     fitsName = ".".join(fitsName.split("/")[-1].split(".")[:-1])
