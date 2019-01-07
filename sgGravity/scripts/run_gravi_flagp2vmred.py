@@ -56,7 +56,7 @@ else:
 #-> Setup the f1f2_thrd
 if not f1f2_thrd is None:
     f1f2_thrd = eval(f1f2_thrd)
-    
+
 #-> Summarize the treatments
 if verbose:
     print("[GRAV_FLAG: SUMMARY]")
@@ -75,12 +75,16 @@ for gp2vm in gp2vmSet:
     #-> Revise the rejection_flag
     rejflag = gp2vm.get_data("oi_vis:rejection_flag", insname="ft")
     #--> Select on GDELAY
+    if verbose:
+        print("[GRAV_FLAG: NOTICE] |GDELAY|<{0}".format(gdly_thrd))
     gdlyList = gp2vm.get_data("oi_vis:gdelay", insname="ft") * 1e6 # Convert the units to micron
     fltr_gooddata = np.abs(gdlyList) < gdly_thrd
     #--> Select on F1F2
     if f1f2_thrd is None:
         pass # No selection on F1F2
     else:
+        if verbose:
+            print("[GRAV_FLAG: NOTICE] F1F2>{0}".format(f1f2_thrd))
         f1f2List = gp2vm.get_data("oi_vis:f1f2", insname="ft")
         fltr_f1f2 = np.sum((f1f2List[:, :, 1:-1] > f1f2_thrd), axis=2) == (nchn - 2) # Ignore the two channels on the end
         fltr_gooddata = fltr_gooddata & fltr_f1f2
