@@ -2,6 +2,7 @@ import datetime
 import numpy as np
 from astropy.io import fits
 from astropy import units as u
+import matplotlib.pyplot as plt
 
 __all__ = ["GravitySet", "GravityData", "GravityVis", "GravityP2VMRED"]
 
@@ -30,6 +31,67 @@ class GravitySet(object):
             if verbose & (not file_list is None):
                 print("The gd_list is used so file_list is ignored!")
         self.gd_list = gd_list
+
+    def plot_visibility(self, insname="ft", visdata="vis2", FigAx=None, obsdate=None,
+                        flagged=True, ignore_side_channels=False, label_fontsize=24,
+                        tick_labelsize=18, verbose=False):
+        """
+        Plot the visibility data (vis2, visamp, or visphi, as well as their errors).
+
+        Parameters
+        ----------
+        insname : string
+            The instrument name, "ft" or "sc".
+        visdata : string
+            The visibility data, vis2, visamp, or visphi.
+        FigAx : tuple (optional)
+            The Figure and Axes objects generated in prior.
+        obsdate : datetime object or string (list)
+            The observation date information to select the data.
+                datetime object -> call get_Data_obsdate_single();
+                y-m-dTh:m:s -> call get_Data_obsdate_single();
+                y-m-d -> call get_Data_obsdate_range() for [y-m-dT12:00:00, y-m-(d+1)T12:00:00].
+                [y1-m1-d1Th1:m1:s1, y2-m2-d2Th2:m2:s2] -> call get_Data_obsdate_range().
+        flagged : bool, default: True
+            Plot the flagged data, if True.
+        ignore_side_channels : bool, default: False
+            Ignore the first and the last channels in the plot.
+        label_fontsize : float, default: 24
+            The fontsize of the labels of both axes.
+        tick_labelsize : float, default: 18
+            The fontsize of the ticklabel of both axes.
+        verbose : bool, default: False
+            Print auxiliary information if True.
+
+        Returns
+        -------
+        fig : Figure object
+        ax : Axes object
+        """
+        #-> Select data
+        if obsdate is None:
+            gdList = self.get_gd_list()
+        else:
+            gdList = self.get_Data_obsdate(obsdate).gd_list
+        #--> Make sure there are data selected as a GravitySet
+        if type(gdList) == type(list()):
+            if len(gdList) == 0:
+                raise ValueError("There is not data to plot!")
+        else:
+            raise KeyError("The obsdate ({0}) is not a time range!".format(obsdate))
+        #-> Plot
+        if FigAx is None:
+            fig = plt.figure(figsize=(7, 7))
+            ax  = plt.gca()
+        else:
+            fig, ax = FigAx
+        for gd in gdList:
+            gd.plot_visibility(insname=insname, visdata=visdata, FigAx=(fig, ax),
+                               flagged=flagged, errorbar_kws={},
+                               ignore_side_channels=ignore_side_channels,
+                               label_fontsize=label_fontsize, tick_labelsize=tick_labelsize,
+                               verbose=verbose)
+        return (fig, ax)
 
     def get_Data_obsdate(self, obsdate, **kwargs):
         """
@@ -267,11 +329,92 @@ class GravityData(object):
         else:
             raise ValueError("The catg ({0}) is not supported!".format(self.catg))
 
-    def plot_vis2(self):
+    def plot_visibility(self, insname="ft", visdata="vis2", FigAx=None, flagged=True,
+                        errorbar_kws={}, ignore_side_channels=False, label_fontsize=24,
+                        tick_labelsize=18, verbose=False):
         """
-        Plot the vis2
+        Plot the visibility data (vis2, visamp, or visphi, as well as their errors).
+
+        Parameters
+        ----------
+        insname : string
+            The instrument name, "ft" or "sc".
+        visdata : string
+            The visibility data, vis2, visamp, or visphi.
+        FigAx : tuple (optional)
+            The Figure and Axes objects generated in prior.
+        flagged : bool, default: True
+            Plot the flagged data, if True.
+        errorbar_kws : dict, default: {}
+            The keywords for errorbar() function
+        ignore_side_channels : bool, default: False
+            Ignore the first and the last channels in the plot.
+        label_fontsize : float, default: 24
+            The fontsize of the labels of both axes.
+        tick_labelsize : float, default: 18
+            The fontsize of the ticklabel of both axes.
+        verbose : bool, default: False
+            Print auxiliary information if True.
+
+        Returns
+        -------
+        fig : Figure object
+        ax : Axes object
         """
-        return None
+        assert self.catg in self.__catglist_vis
+        #-> Get the data
+        ruv_mas = self.ruv_mas(insname=insname, verbose=verbose)
+        visdata = visdata.upper()
+        if visdata == "VIS2":
+            viskw = "OI_VIS2:VIS2DATA"
+            visekw = "OI_VIS2:VIS2ERR"
+            ylabel = r"Vis.$^2$"
+        elif visdata == "VISAMP":
+            viskw = "OI_VIS:VISAMP"
+            visekw = "OI_VIS:VISAMPERR"
+            ylabel = "Vis. Amp."
+        elif visdata == "VISPHI":
+            viskw = "OI_VIS:VISPHI"
+            visekw = "OI_VIS:VISPHIERR"
+            ylabel = "Phase (Degree)"
+        else:
+            raise KeyError("Cannot recognize the visdata ({0})!".format(visdata))
+        if flagged:
+            vis  = self.get_data_flagged(viskw, insname=insname, verbose=verbose)
+            vise = self.get_data_flagged(visekw, insname=insname, verbose=verbose)
+        else:
+            vis  = self.get_data(viskw, insname=insname, verbose=verbose)
+            vise = self.get_data(visekw, insname=insname, verbose=verbose)
+        #-> Plot
+        if FigAx is None:
+            fig = plt.figure(figsize=(7, 7))
+            ax  = plt.gca()
+        else:
+            fig, ax = FigAx
+        kList = errorbar_kws.keys()
+        if not "marker" in kList:
+            errorbar_kws["marker"] = "o"
+        if not (("ls" in kList) or ("linestyle" in kList)):
+            errorbar_kws["ls"] = "none"
+        for loop_b in range(self.dims["BASELINE"]):
+            if not "color" in kList:
+                errorbar_kws["color"] = "C{0}".format(loop_b)
+            if not (("mec" in kList) or ("markeredgecolor" in kList)):
+                errorbar_kws["mec"] = errorbar_kws["color"]
+            if ignore_side_channels:
+                x = ruv_mas[loop_b, 1:-1].flatten()
+                y = vis[loop_b, 1:-1].flatten()
+                e = vise[loop_b, 1:-1].flatten()
+            else:
+                x = ruv_mas[loop_b, :].flatten()
+                y = vis[loop_b, :].flatten()
+                e = vise[loop_b, :].flatten()
+            ax.errorbar(x, y, yerr=e, **errorbar_kws)
+        ax.set_xlabel(r"$r_\mathrm{UV}$ (mas$^{-1})$", fontsize=label_fontsize)
+        ax.set_ylabel(ylabel, fontsize=label_fontsize)
+        ax.minorticks_on()
+        ax.tick_params(axis='both', which='major', labelsize=tick_labelsize)
+        return (fig, ax)
 
     def get_time_dit(self, insname="ft", unit_read="s"):
         """
