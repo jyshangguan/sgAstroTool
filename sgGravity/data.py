@@ -3,6 +3,7 @@ import numpy as np
 from astropy.io import fits
 from astropy import units as u
 import matplotlib.pyplot as plt
+from copy import deepcopy
 
 __all__ = ["GravitySet", "GravityData", "GravityVis", "GravityP2VMRED"]
 
@@ -31,10 +32,21 @@ class GravitySet(object):
             if verbose & (not file_list is None):
                 print("The gd_list is used so file_list is ignored!")
         self.gd_list = gd_list
+        self.__length = len(gd_list)
+        self.dims = {
+            "BASELINE": 6,
+            "TELESCOPE": 4,
+            "TRIANGLE": 4,
+            "CHANNEL_FT": 5,
+            "CHANNEL_SC": 210,
+            "OI_VIS:STA_INDEX": 2,
+            "OI_VIS2:STA_INDEX": 2,
+            "OI_FLUX:STA_INDEX": 1,
+        }
 
-    def plot_visibility(self, insname="ft", visdata="vis2", FigAx=None, obsdate=None,
-                        flagged=True, ignore_side_channels=False, label_fontsize=24,
-                        tick_labelsize=18, verbose=False):
+    def plot_visibility(self, insname="ft", visdata="vis2", FigAx=None, flagged=True,
+                        ignore_side_channels=False, label_fontsize=24, tick_labelsize=18,
+                        verbose=False):
         """
         Plot the visibility data (vis2, visamp, or visphi, as well as their errors).
 
@@ -46,12 +58,6 @@ class GravitySet(object):
             The visibility data, vis2, visamp, or visphi.
         FigAx : tuple (optional)
             The Figure and Axes objects generated in prior.
-        obsdate : datetime object or string (list)
-            The observation date information to select the data.
-                datetime object -> call get_Data_obsdate_single();
-                y-m-dTh:m:s -> call get_Data_obsdate_single();
-                y-m-d -> call get_Data_obsdate_range() for [y-m-dT12:00:00, y-m-(d+1)T12:00:00].
-                [y1-m1-d1Th1:m1:s1, y2-m2-d2Th2:m2:s2] -> call get_Data_obsdate_range().
         flagged : bool, default: True
             Plot the flagged data, if True.
         ignore_side_channels : bool, default: False
@@ -68,30 +74,142 @@ class GravitySet(object):
         fig : Figure object
         ax : Axes object
         """
-        #-> Select data
-        if obsdate is None:
-            gdList = self.get_gd_list()
-        else:
-            gdList = self.get_Data_obsdate(obsdate).gd_list
-        #--> Make sure there are data selected as a GravitySet
-        if type(gdList) == type(list()):
-            if len(gdList) == 0:
-                raise ValueError("There is not data to plot!")
-        else:
-            raise KeyError("The obsdate ({0}) is not a time range!".format(obsdate))
-        #-> Plot
         if FigAx is None:
             fig = plt.figure(figsize=(7, 7))
             ax  = plt.gca()
         else:
             fig, ax = FigAx
-        for gd in gdList:
+        #-> Plot each data
+        for gd in self.gd_list:
             gd.plot_visibility(insname=insname, visdata=visdata, FigAx=(fig, ax),
                                flagged=flagged, errorbar_kws={},
                                ignore_side_channels=ignore_side_channels,
                                label_fontsize=label_fontsize, tick_labelsize=tick_labelsize,
                                verbose=verbose)
         return (fig, ax)
+
+    def plot_strehl(self, visdata="vis2", channel=3, FigAx=None, errorbar_kws=None,
+                    label_fontsize=24, tick_labelsize=18, text_fontsize=16, verbose=False):
+        """
+        Plot the Strehl versus visibility of the FT data.
+
+        Parameters
+        ----------
+        visdata : string
+            The visibility data, vis2, visamp, or visphi.
+        channel : float
+            The number of the channel to look at.
+        FigAx : tuple (optional)
+            The Figure and Axes objects generated in prior.
+        errorbar_kws : dict (optional)
+            The keywords for errorbar() function.
+        label_fontsize : float, default: 24
+            The fontsize of the labels of both axes.
+        tick_labelsize : float, default: 18
+            The fontsize of the ticklabel of both axes.
+        text_fontsize : float, default: 16
+            The fontsize of the text.
+        verbose : bool, default: False
+            Print auxiliary information if True.
+
+        Returns
+        -------
+        fig : Figure object
+        ax : Axes object
+        """
+        if FigAx is None:
+            fig = plt.figure(figsize=(7, 7))
+            ax  = plt.gca()
+        else:
+            fig, ax = FigAx
+        #-> Get the vis keyword
+        visdata = visdata.upper()
+        if visdata == "VIS2":
+            viskw = "OI_VIS2:VIS2DATA"
+            visekw = "OI_VIS2:VIS2ERR"
+            ylabel = r"Vis.$^2$"
+        elif visdata == "VISAMP":
+            viskw = "OI_VIS:VISAMP"
+            visekw = "OI_VIS:VISAMPERR"
+            ylabel = "Vis. Amp."
+        else:
+            raise KeyError("Cannot recognize the visdata ({0})!".format(visdata))
+        #-> Plot the data
+        #--> Setup the plot keywords
+        if errorbar_kws is None:
+            errorbar_kws = {}
+        kList = errorbar_kws.keys()
+        if not "marker" in kList:
+            errorbar_kws["marker"] = "."
+        if not (("ls" in kList) or ("linestyle" in kList)):
+            errorbar_kws["ls"] = "none"
+        nbaseline = self.dims["BASELINE"]
+        flag = 0
+        for gd in self.gd_list:
+            for bsl in range(nbaseline):
+                bslList = gd.get_baseline_Tidx(bsl)
+                strehlList = gd.get_qc("qc_acq_strehl")[bslList]
+                if not "color" in kList:
+                    errorbar_kws["color"] = "C{0}".format(bsl)
+                x  = np.average(strehlList)
+                xe = np.abs(strehlList[0] - strehlList[1]) / 2.
+                y  = gd.get_data_flagged(viskw)[bsl, channel]
+                ye = gd.get_data_flagged(visekw)[bsl, channel]
+                if (flag < nbaseline) & (not "label" in kList):
+                    errorbar_kws["label"] = "{0[0]}-{0[1]}".format(gd.get_baseline_UT(bsl))
+                    flag += 1
+                else:
+                    errorbar_kws["label"] = None
+                ax.errorbar(x, y, xerr=xe, yerr=ye, **errorbar_kws)
+        ax.text(0.95, 0.95, "Channel: {0}".format(channel), fontsize=text_fontsize,
+                transform=ax.transAxes, horizontalalignment='right', verticalalignment='top')
+        ax.set_xlabel("Strehl Ratio", fontsize=label_fontsize)
+        ax.set_ylabel(ylabel, fontsize=label_fontsize)
+        ax.minorticks_on()
+        ax.tick_params(axis='both', which='major', labelsize=tick_labelsize)
+        return (fig, ax)
+
+    def plot_perobs(self, function, show_obsdate=True, text_fontsize=16,
+                    sharex=True, sharey=True, **function_kwargs):
+        """
+        Plot the data of the individual nights separately.
+
+        Parameters
+        ----------
+
+        """
+        ndat = self.__length
+        nrow = np.ceil(np.sqrt(ndat))
+        ncol = np.ceil(ndat / nrow)
+        nrow = int(nrow)
+        ncol = int(ncol)
+        fig, axs = plt.subplots(nrow, ncol, sharex=sharex, sharey=sharey)
+        fig.set_size_inches(5*ncol, 5*nrow)
+        ncount = 0
+        for loop_r in range(nrow):
+            for loop_c in range(ncol):
+                kwargs = deepcopy(function_kwargs)
+                ax = axs[loop_r, loop_c]
+                if ncount < ndat:
+                    kwargs["FigAx"] = (fig, ax)
+                    exec("self[ncount].{0}(**kwargs)".format(function))
+                    if loop_r != (nrow-1):
+                        ax.set_xlabel("")
+                    if loop_c != 0:
+                        ax.set_ylabel("")
+                    if show_obsdate:
+                        #ax.text(0.05, 0.95, self[ncount].obsdate, fontsize=text_fontsize,
+                        #        transform=ax.transAxes, horizontalalignment='left',
+                        #        verticalalignment='top')
+                        ax.set_title(self[ncount].obsdate, fontsize=text_fontsize)
+                    ncount += 1
+                else:
+                    ax.axis('off')
+        if sharex:
+            plt.subplots_adjust(hspace=0.1)
+        if sharey:
+            plt.subplots_adjust(wspace=0)
+        return (fig, axs)
 
     def get_Data_obsdate(self, obsdate, **kwargs):
         """
@@ -330,8 +448,8 @@ class GravityData(object):
             raise ValueError("The catg ({0}) is not supported!".format(self.catg))
 
     def plot_visibility(self, insname="ft", visdata="vis2", FigAx=None, flagged=True,
-                        errorbar_kws={}, ignore_side_channels=False, label_fontsize=24,
-                        tick_labelsize=18, verbose=False):
+                        errorbar_kws=None, legend_kws=None, ignore_side_channels=False,
+                        label_fontsize=24, tick_labelsize=18, verbose=False):
         """
         Plot the visibility data (vis2, visamp, or visphi, as well as their errors).
 
@@ -345,7 +463,7 @@ class GravityData(object):
             The Figure and Axes objects generated in prior.
         flagged : bool, default: True
             Plot the flagged data, if True.
-        errorbar_kws : dict, default: {}
+        errorbar_kws : dict (optional)
             The keywords for errorbar() function
         ignore_side_channels : bool, default: False
             Ignore the first and the last channels in the plot.
@@ -391,6 +509,8 @@ class GravityData(object):
             ax  = plt.gca()
         else:
             fig, ax = FigAx
+        if errorbar_kws is None:
+            errorbar_kws = {}
         kList = errorbar_kws.keys()
         if not "marker" in kList:
             errorbar_kws["marker"] = "o"
@@ -401,6 +521,8 @@ class GravityData(object):
                 errorbar_kws["color"] = "C{0}".format(loop_b)
             if not (("mec" in kList) or ("markeredgecolor" in kList)):
                 errorbar_kws["mec"] = errorbar_kws["color"]
+            if not legend_kws is None:
+                errorbar_kws["label"] = "{0[0]}-{0[1]}".format(self.get_baseline_UT(loop_b))
             if ignore_side_channels:
                 x = ruv_mas[loop_b, 1:-1].flatten()
                 y = vis[loop_b, 1:-1].flatten()
@@ -414,6 +536,137 @@ class GravityData(object):
         ax.set_ylabel(ylabel, fontsize=label_fontsize)
         ax.minorticks_on()
         ax.tick_params(axis='both', which='major', labelsize=tick_labelsize)
+        #-> Legend
+        if not legend_kws is None:
+            if len(legend_kws.keys()) == 0:
+                ax.legend(loc="lower right", fontsize=20, ncol=2, columnspacing=0)
+            else:
+                ax.legend(**legend_kws)
+        return (fig, ax)
+
+    def plot_p2vmred(self, insname="ft", xdata="oi_vis:gdelay", ydata="oi_vis:f1f2",
+                     FigAx=None, flagged=True, mask=None, xperc=None, yperc=None,
+                     cperc=None, plot_kws=None, label_fontsize=24, tick_labelsize=18,
+                     point_limit=None, verbose=False):
+        """
+        Plot the P2VMRED data.  The most relevant as far as I see is GDELAY--F1F2.
+
+        Parameters
+        ----------
+        insname : string
+            The instrument name, "ft" or "sc".
+        xdata : string, default: "oi_vis:gdelay"
+            The data on the x axis.
+        ydata : string, default: "oi_vis:f1f2"
+            The data on the y axis.
+        FigAx : tuple (optional)
+            The Figure and Axes objects generated in prior.
+        flagged : bool, default: True
+            Plot the flagged data, if True.
+        mask : array_like (optional)
+            The mask to flag the data.
+        xperc : list (optional)
+            The list to calculate the demarcation lines of percentiles for the xdata.
+        yperc : list (optional)
+            The list to calculate the demarcation lines of percentiles for the ydata.
+        cperc : list (optional)
+            The list of color names for the demarcation lines.
+        plot_kws : dict (optional)
+            The keywords for the plt.plot() function.
+        label_fontsize : float, default: 24
+            The fontsize of the labels of both axes.
+        tick_labelsize : float, default: 18
+            The fontsize of the ticklabel of both axes.
+        point_limit : int (optional)
+            Control the number of plotted points.
+        verbose : bool, default: False
+            Print auxiliary information if True.
+
+        Returns
+        -------
+        fig : Figure object
+        ax : Axes object
+        """
+        assert self.catg in self.__catglist_p2vmred
+        #-> Get data
+        if flagged:
+            x = self.get_data_flagged(xdata, mask=mask, insname="ft", verbose=verbose)
+            y = self.get_data_flagged(ydata, mask=mask, insname="ft", verbose=verbose)
+            x = x[~x.mask]
+            y = y[~y.mask]
+        else:
+            x = self.get_data(xdata, insname="ft", verbose=verbose)
+            y = self.get_data(ydata, insname="ft", verbose=verbose)
+            x = x.flatten()
+            y = y.flatten()
+        #-> Prepare plot
+        if xdata == "oi_vis:gdelay":
+            xlabel = r"|GDELAY| ($\mu$m)"
+            x = np.abs(x) * 1e6 #units: micron
+        else:
+            xlabel = xdata
+        if ydata == "oi_vis:f1f2":
+            ylabel = "F1F2"
+        else:
+            ylabel = ydata
+        #--> Simple statistics
+        if xperc is None:
+            xperc = [20, 50, 70, 90]
+            try:
+                xPercs = np.percentile(x, xperc)
+            except:
+                xPercs = []
+        if yperc is None:
+            yperc = [20, 50, 70, 90]
+            try:
+                yPercs = np.percentile(y, yperc)
+            except:
+                yPercs = []
+        if cperc is None:
+            ncolors = np.max([len(xPercs), len(yPercs)])
+            if ncolors > 10:
+                raise ValueError("There are too many lines to draw.  cperc should be specified!")
+            cPercs = ["C{0}".format(c) for c in range(ncolors)]
+        #-> Limit the number of data points
+        if not point_limit is None:
+            nd = len(x)
+            assert nd == len(y)
+            if nd > point_limit:
+                idx = np.random.choice(range(nd), int(point_limit))
+                x = np.array([x[i] for i in idx])
+                y = np.array([y[i] for i in idx])
+            else:
+                if verbose:
+                    print("The number of data ({0}) is below the point_limit ({1})!".format(nd, point_limit))
+        #-> Plot
+        if FigAx is None:
+            fig = plt.figure(figsize=(7, 7))
+            ax  = plt.gca()
+        else:
+            fig, ax = FigAx
+        if plot_kws is None:
+            plot_kws = {}
+        kList = plot_kws.keys()
+        if not "marker" in kList:
+            plot_kws["marker"] = "."
+        if not "color" in kList:
+            plot_kws["color"] = "k"
+        if not (("ls" in kList) or ("linestyle" in kList)):
+            plot_kws["ls"] = "none"
+        if not "alpha" in kList:
+            plot_kws["alpha"] = 0.05
+        ax.plot(x, y, **plot_kws)
+        for loop_x in range(len(xPercs)):
+            ax.axvline(x=xPercs[loop_x], ymin=0.9, ymax=1, ls="--", lw=2, color=cPercs[loop_x],
+                       label="{0}%".format(xperc[loop_x]))
+        for loop_y in range(len(yPercs)):
+            ax.axhline(y=yPercs[loop_y], xmin=0.9, xmax=1, ls=":", lw=2, color=cPercs[loop_y],
+                       label="{0}%".format(yperc[loop_y]))
+        ax.set_xlabel(xlabel, fontsize=label_fontsize)
+        ax.set_ylabel(ylabel, fontsize=label_fontsize)
+        ax.minorticks_on()
+        ax.tick_params(axis='both', which='major', labelsize=tick_labelsize)
+        ax.legend(loc="upper right", fontsize=16, ncol=2, handletextpad=0.1, columnspacing=0.2)
         return (fig, ax)
 
     def get_time_dit(self, insname="ft", unit_read="s"):
