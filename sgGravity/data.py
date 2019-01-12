@@ -45,7 +45,8 @@ class GravitySet(object):
         }
 
     def plot_visibility(self, insname="ft", visdata="vis2", FigAx=None, flagged=True,
-                        ignore_side_channels=False, label_fontsize=24, tick_labelsize=18,
+                        errorbar_kws=None, legend_kws=None, ignored_channels=None,
+                        label_fontsize=24, tick_labelsize=18, text_fontsize=16,
                         verbose=False):
         """
         Plot the visibility data (vis2, visamp, or visphi, as well as their errors).
@@ -60,8 +61,13 @@ class GravitySet(object):
             The Figure and Axes objects generated in prior.
         flagged : bool, default: True
             Plot the flagged data, if True.
-        ignore_side_channels : bool, default: False
-            Ignore the first and the last channels in the plot.
+        errorbar_kws : dict (optional)
+            The keywords for plt.errorbar() function
+        legend_kws : dict (optional)
+            The keywords for plt.legend() function
+        ignored_channels : list (optional)
+            The list of channel indices (0~4 for FT and 0~209 for SC) ignored in
+            the plot.
         label_fontsize : float, default: 24
             The fontsize of the labels of both axes.
         tick_labelsize : float, default: 18
@@ -80,16 +86,72 @@ class GravitySet(object):
         else:
             fig, ax = FigAx
         #-> Plot each data
-        for gd in self.gd_list:
-            gd.plot_visibility(insname=insname, visdata=visdata, FigAx=(fig, ax),
-                               flagged=flagged, errorbar_kws={},
-                               ignore_side_channels=ignore_side_channels,
-                               label_fontsize=label_fontsize, tick_labelsize=tick_labelsize,
+        for loop in range(self.__length):
+            if loop > 0:
+                legend_kws = None
+            self[loop].plot_visibility(insname=insname, visdata=visdata, FigAx=(fig, ax),
+                                       flagged=flagged, errorbar_kws=None, legend_kws=legend_kws,
+                                       ignored_channels=ignored_channels, label_fontsize=label_fontsize,
+                                       tick_labelsize=tick_labelsize, text_fontsize=text_fontsize,
+                                       verbose=verbose)
+        return (fig, ax)
+
+    def plot_t3(self, insname="ft", t3data="phi", FigAx=None, flagged=True, errorbar_kws=None,
+                legend_kws=None, ignored_channels=None, label_fontsize=24, tick_labelsize=18,
+                text_fontsize=16, verbose=False):
+        """
+        Plot the T3 data (t3amp or t3phi as well as their errors).
+
+        Parameters
+        ----------
+        insname : string
+            The instrument name, "ft" or "sc".
+        visdata : string
+            The visibility data, vis2, visamp, or visphi.
+        FigAx : tuple (optional)
+            The Figure and Axes objects generated in prior.
+        flagged : bool, default: True
+            Plot the flagged data, if True.
+        errorbar_kws : dict (optional)
+            The keywords for plt.errorbar() function
+        legend_kws : dict (optional)
+            The keywords for plt.legend() function
+        ignored_channels : list (optional)
+            The list of channel indices (0~4 for FT and 0~209 for SC) ignored in
+            the plot.
+        label_fontsize : float, default: 24
+            The fontsize of the labels of both axes.
+        tick_labelsize : float, default: 18
+            The fontsize of the ticklabel of both axes.
+        text_fontsize : float, default: 16
+            The fontsize of the text in the figure.
+        verbose : bool, default: False
+            Print auxiliary information if True.
+
+        Returns
+        -------
+        fig : Figure object
+        ax : Axes object
+        """
+        if FigAx is None:
+            fig = plt.figure(figsize=(7, 7))
+            ax  = plt.gca()
+        else:
+            fig, ax = FigAx
+        #-> Plot each data
+        for loop in range(self.__length):
+            if loop > 0:
+                legend_kws = None
+            self[loop].plot_t3(insname=insname, t3data=t3data, FigAx=(fig, ax),
+                               flagged=flagged, errorbar_kws=None, legend_kws=legend_kws,
+                               ignored_channels=ignored_channels, label_fontsize=label_fontsize,
+                               tick_labelsize=tick_labelsize, text_fontsize=text_fontsize,
                                verbose=verbose)
         return (fig, ax)
 
     def plot_strehl(self, visdata="vis2", channel=3, FigAx=None, errorbar_kws=None,
-                    label_fontsize=24, tick_labelsize=18, text_fontsize=16, verbose=False):
+                    legend_kws=None, label_fontsize=24, tick_labelsize=18, text_fontsize=16,
+                    verbose=False):
         """
         Plot the Strehl versus visibility of the FT data.
 
@@ -103,6 +165,8 @@ class GravitySet(object):
             The Figure and Axes objects generated in prior.
         errorbar_kws : dict (optional)
             The keywords for errorbar() function.
+        legend_kws : dict (optional)
+            The keywords for plt.legend() function
         label_fontsize : float, default: 24
             The fontsize of the labels of both axes.
         tick_labelsize : float, default: 18
@@ -147,8 +211,9 @@ class GravitySet(object):
         flag = 0
         for gd in self.gd_list:
             for bsl in range(nbaseline):
-                bslList = gd.get_baseline_Tidx(bsl)
-                strehlList = gd.get_qc("qc_acq_strehl")[bslList]
+                bsl_tn = gd.baseline_tn(bsl)
+                bsl_idx = gd.index_tn(bsl_tn)
+                strehlList = gd.get_qc("qc_acq_strehl")[bsl_idx]
                 if not "color" in kList:
                     errorbar_kws["color"] = "C{0}".format(bsl)
                 x  = np.average(strehlList)
@@ -156,7 +221,7 @@ class GravitySet(object):
                 y  = gd.get_data_flagged(viskw)[bsl, channel]
                 ye = gd.get_data_flagged(visekw)[bsl, channel]
                 if (flag < nbaseline) & (not "label" in kList):
-                    errorbar_kws["label"] = "{0[0]}-{0[1]}".format(gd.get_baseline_UT(bsl))
+                    errorbar_kws["label"] = "{0[0]}-{0[1]}".format(bsl_tn)
                     flag += 1
                 else:
                     errorbar_kws["label"] = None
@@ -167,6 +232,11 @@ class GravitySet(object):
         ax.set_ylabel(ylabel, fontsize=label_fontsize)
         ax.minorticks_on()
         ax.tick_params(axis='both', which='major', labelsize=tick_labelsize)
+        if legend_kws is None:
+            ax.legend(loc="lower right", fontsize=text_fontsize, ncol=2, handletextpad=0.1,
+                      columnspacing=0.2)
+        else:
+            ax.legend(**legend_kws)
         return (fig, ax)
 
     def plot_perobs(self, function, show_obsdate=True, text_fontsize=16,
@@ -176,7 +246,22 @@ class GravitySet(object):
 
         Parameters
         ----------
+        function : string
+            The name of the function to plot for the individual observation.
+        show_obsdate : bool, default: True
+            Show the obsdate in the title of each panel.
+        text_fontsize : float, default: 16
+            The fontsize of the text in the figure.
+        sharex : bool, default: True
+            Share the X axis for each panel.
+        sharey : bool, default: True
+            Share the Y axis for each panel.
+        **function_kwargs : kwargs of the plot function.
 
+        Returns
+        -------
+        fig : Figure object
+        ax : array of Axes objects
         """
         ndat = self.__length
         nrow = np.ceil(np.sqrt(ndat))
@@ -198,9 +283,6 @@ class GravitySet(object):
                     if loop_c != 0:
                         ax.set_ylabel("")
                     if show_obsdate:
-                        #ax.text(0.05, 0.95, self[ncount].obsdate, fontsize=text_fontsize,
-                        #        transform=ax.transAxes, horizontalalignment='left',
-                        #        verticalalignment='top')
                         ax.set_title(self[ncount].obsdate, fontsize=text_fontsize)
                     ncount += 1
                 else:
@@ -448,8 +530,9 @@ class GravityData(object):
             raise ValueError("The catg ({0}) is not supported!".format(self.catg))
 
     def plot_visibility(self, insname="ft", visdata="vis2", FigAx=None, flagged=True,
-                        errorbar_kws=None, legend_kws=None, ignore_side_channels=False,
-                        label_fontsize=24, tick_labelsize=18, verbose=False):
+                        errorbar_kws=None, legend_kws=None, ignored_channels=None,
+                        label_fontsize=24, tick_labelsize=18, text_fontsize=16,
+                        verbose=False):
         """
         Plot the visibility data (vis2, visamp, or visphi, as well as their errors).
 
@@ -464,13 +547,18 @@ class GravityData(object):
         flagged : bool, default: True
             Plot the flagged data, if True.
         errorbar_kws : dict (optional)
-            The keywords for errorbar() function
-        ignore_side_channels : bool, default: False
-            Ignore the first and the last channels in the plot.
+            The keywords for plt.errorbar() function
+        legend_kws : dict (optional)
+            The keywords for plt.legend() function
+        ignored_channels : list (optional)
+            The list of channel indices (0~4 for FT and 0~209 for SC) ignored in
+            the plot.
         label_fontsize : float, default: 24
             The fontsize of the labels of both axes.
         tick_labelsize : float, default: 18
             The fontsize of the ticklabel of both axes.
+        text_fontsize : float, default: 16
+            The fontsize of the text in the figure.
         verbose : bool, default: False
             Print auxiliary information if True.
 
@@ -481,7 +569,7 @@ class GravityData(object):
         """
         assert self.catg in self.__catglist_vis
         #-> Get the data
-        ruv_mas = self.ruv_mas(insname=insname, verbose=verbose)
+        ruv = self.ruv_mas(insname=insname, verbose=verbose)
         visdata = visdata.upper()
         if visdata == "VIS2":
             viskw = "OI_VIS2:VIS2DATA"
@@ -522,15 +610,18 @@ class GravityData(object):
             if not (("mec" in kList) or ("markeredgecolor" in kList)):
                 errorbar_kws["mec"] = errorbar_kws["color"]
             if not legend_kws is None:
-                errorbar_kws["label"] = "{0[0]}-{0[1]}".format(self.get_baseline_UT(loop_b))
-            if ignore_side_channels:
-                x = ruv_mas[loop_b, 1:-1].flatten()
-                y = vis[loop_b, 1:-1].flatten()
-                e = vise[loop_b, 1:-1].flatten()
-            else:
-                x = ruv_mas[loop_b, :].flatten()
+                errorbar_kws["label"] = "{0[0]}-{0[1]}".format(self.baseline_tn(loop_b))
+            if ignored_channels is None:
+                x = ruv[loop_b, :].flatten()
                 y = vis[loop_b, :].flatten()
                 e = vise[loop_b, :].flatten()
+            else:
+                chnList = range(self.dims["CHANNEL_{0}".format(insname.upper())])
+                for cidx in ignored_channels:
+                    chnList.remove(cidx)
+                x = ruv[loop_b, chnList].flatten()
+                y = vis[loop_b, chnList].flatten()
+                e = vise[loop_b, chnList].flatten()
             ax.errorbar(x, y, yerr=e, **errorbar_kws)
         ax.set_xlabel(r"$r_\mathrm{UV}$ (mas$^{-1})$", fontsize=label_fontsize)
         ax.set_ylabel(ylabel, fontsize=label_fontsize)
@@ -539,15 +630,118 @@ class GravityData(object):
         #-> Legend
         if not legend_kws is None:
             if len(legend_kws.keys()) == 0:
-                ax.legend(loc="lower right", fontsize=20, ncol=2, columnspacing=0)
+                ax.legend(loc="lower right", fontsize=text_fontsize, ncol=2, handletextpad=0.1,
+                          columnspacing=0.2)
+            else:
+                ax.legend(**legend_kws)
+        return (fig, ax)
+
+    def plot_t3(self, insname="ft", t3data="phi", FigAx=None, flagged=True, errorbar_kws=None,
+                legend_kws=None, ignored_channels=None, label_fontsize=24, tick_labelsize=18,
+                text_fontsize=16, verbose=False):
+        """
+        Plot the T3 data (t3amp or t3phi as well as their errors).
+
+        Parameters
+        ----------
+        insname : string
+            The instrument name, "ft" or "sc".
+        visdata : string
+            The visibility data, vis2, visamp, or visphi.
+        FigAx : tuple (optional)
+            The Figure and Axes objects generated in prior.
+        flagged : bool, default: True
+            Plot the flagged data, if True.
+        errorbar_kws : dict (optional)
+            The keywords for plt.errorbar() function
+        legend_kws : dict (optional)
+            The keywords for plt.legend() function
+        ignored_channels : list (optional)
+            The list of channel indices (0~4 for FT and 0~209 for SC) ignored in
+            the plot.
+        label_fontsize : float, default: 24
+            The fontsize of the labels of both axes.
+        tick_labelsize : float, default: 18
+            The fontsize of the ticklabel of both axes.
+        text_fontsize : float, default: 16
+            The fontsize of the text in the figure.
+        verbose : bool, default: False
+            Print auxiliary information if True.
+
+        Returns
+        -------
+        fig : Figure object
+        ax : Axes object
+        """
+        assert self.catg in self.__catglist_vis
+        #-> Get the data
+        ruv3 = self.ruv3_mas(insname=insname, verbose=verbose)
+        t3data = t3data.upper()
+        if t3data == "PHI":
+            t3kw  = "OI_T3:T3PHI"
+            t3ekw = "OI_T3:T3PHIERR"
+            ylabel = "Closure Phase (Degree)"
+        elif t3data == "AMP":
+            t3kw = "OI_T3:T3AMP"
+            t3ekw = "OI_T3:T3AMPERR"
+            ylabel = "Closure Amplitude"
+        else:
+            raise KeyError("Cannot recognize the t3data ({0})!".format(t3data))
+        if flagged:
+            t3  = self.get_data_flagged(t3kw, insname=insname, verbose=verbose)
+            t3e = self.get_data_flagged(t3ekw, insname=insname, verbose=verbose)
+        else:
+            t3  = self.get_data(t3kw, insname=insname, verbose=verbose)
+            t3e = self.get_data(t3ekw, insname=insname, verbose=verbose)
+        #-> Plot
+        if FigAx is None:
+            fig = plt.figure(figsize=(7, 7))
+            ax  = plt.gca()
+        else:
+            fig, ax = FigAx
+        if errorbar_kws is None:
+            errorbar_kws = {}
+        kList = errorbar_kws.keys()
+        if not "marker" in kList:
+            errorbar_kws["marker"] = "o"
+        if not (("ls" in kList) or ("linestyle" in kList)):
+            errorbar_kws["ls"] = "none"
+        for loop_t in range(self.dims["TRIANGLE"]):
+            if not "color" in kList:
+                errorbar_kws["color"] = "C{0}".format(loop_t)
+            if not (("mec" in kList) or ("markeredgecolor" in kList)):
+                errorbar_kws["mec"] = errorbar_kws["color"]
+            if not legend_kws is None:
+                errorbar_kws["label"] = "{0[0]}-{0[1]}-{0[2]}".format(self.triangle_tn(loop_t))
+            if ignored_channels is None:
+                x = ruv3[loop_t, :].flatten()
+                y = t3[loop_t, :].flatten()
+                e = t3e[loop_t, :].flatten()
+            else:
+                chnList = range(self.dims["CHANNEL_{0}".format(insname.upper())])
+                for cidx in ignored_channels:
+                    chnList.remove(cidx)
+                x = ruv3[loop_t, chnList].flatten()
+                y = t3[loop_t, chnList].flatten()
+                e = t3e[loop_t, chnList].flatten()
+            ax.errorbar(x, y, yerr=e, **errorbar_kws)
+        ax.set_xlabel(r"$r_\mathrm{UV, max}$ (mas$^{-1})$", fontsize=label_fontsize)
+        ax.set_ylabel(ylabel, fontsize=label_fontsize)
+        ax.minorticks_on()
+        ax.tick_params(axis='both', which='major', labelsize=tick_labelsize)
+        #-> Legend
+        if not legend_kws is None:
+            if len(legend_kws.keys()) == 0:
+                ax.legend(loc="lower right", fontsize=text_fontsize, ncol=1, handletextpad=0.1)
             else:
                 ax.legend(**legend_kws)
         return (fig, ax)
 
     def plot_p2vmred(self, insname="ft", xdata="oi_vis:gdelay", ydata="oi_vis:f1f2",
-                     FigAx=None, flagged=True, mask=None, xperc=None, yperc=None,
-                     cperc=None, plot_kws=None, label_fontsize=24, tick_labelsize=18,
-                     point_limit=None, verbose=False):
+                     FigAx=None, flagged=True, mask=None, baseline=None, ignored_channels=None,
+                     xperc=None, yperc=None, cperc=None, plot_kws=None, legend_kws=None,
+                     label_fontsize=24, tick_labelsize=18, text_fontsize=16, point_limit=None,
+                     verbose=False):
         """
         Plot the P2VMRED data.  The most relevant as far as I see is GDELAY--F1F2.
 
@@ -565,6 +759,11 @@ class GravityData(object):
             Plot the flagged data, if True.
         mask : array_like (optional)
             The mask to flag the data.
+        baseline : list (optional)
+            The list of names of the telescope pair, e.g., ["UT4", "UT3"].
+        ignored_channels : list (optional)
+            The list of channel indices (0~4 for FT and 0~209 for SC) ignored in
+            the plot.
         xperc : list (optional)
             The list to calculate the demarcation lines of percentiles for the xdata.
         yperc : list (optional)
@@ -573,10 +772,14 @@ class GravityData(object):
             The list of color names for the demarcation lines.
         plot_kws : dict (optional)
             The keywords for the plt.plot() function.
+        legend_kws : dict (optional)
+            The keywords for the plt.legend() function.
         label_fontsize : float, default: 24
             The fontsize of the labels of both axes.
         tick_labelsize : float, default: 18
             The fontsize of the ticklabel of both axes.
+        text_fontsize : float, default: 16
+            The fontsize of the text in the figure.
         point_limit : int (optional)
             Control the number of plotted points.
         verbose : bool, default: False
@@ -592,11 +795,39 @@ class GravityData(object):
         if flagged:
             x = self.get_data_flagged(xdata, mask=mask, insname="ft", verbose=verbose)
             y = self.get_data_flagged(ydata, mask=mask, insname="ft", verbose=verbose)
-            x = x[~x.mask]
-            y = y[~y.mask]
         else:
             x = self.get_data(xdata, insname="ft", verbose=verbose)
             y = self.get_data(ydata, insname="ft", verbose=verbose)
+        # Ignore the side channels
+        ndim = len(x.shape)
+        if not ignored_channels is None:
+            chnList = range(self.dims["CHANNEL_{0}".format(insname.upper())])
+            for cidx in ignored_channels:
+                chnList.remove(cidx)
+            if ndim == 2:
+                x = x[:, chnList]
+                y = y[:, chnList]
+            if ndim == 3:
+                x = x[:, :, chnList]
+                y = y[:, :, chnList]
+        #--> Select baseline
+        if not baseline is None:
+            bsl_idx = self.index_baseline(baseline, verbose=verbose)
+            if bsl_idx is None:
+                raise ValueError("The baseline ({0}) is not recognized!".format(baseline))
+            if ndim == 2:
+                x = x[:, bsl_idx]
+                y = y[:, bsl_idx]
+            elif ndim == 3:
+                x = x[:, bsl_idx, :]
+                y = y[:, bsl_idx, :]
+            else:
+                raise RuntimeError("The dimension of the data ({0}) is not compatible!".format(ndim))
+        #--> Flatten the data
+        if flagged:
+            x = x[~x.mask]
+            y = y[~y.mask]
+        else:
             x = x.flatten()
             y = y.flatten()
         #-> Prepare plot
@@ -664,9 +895,16 @@ class GravityData(object):
                        label="{0}%".format(yperc[loop_y]))
         ax.set_xlabel(xlabel, fontsize=label_fontsize)
         ax.set_ylabel(ylabel, fontsize=label_fontsize)
+        ax.set_yscale("log")
         ax.minorticks_on()
         ax.tick_params(axis='both', which='major', labelsize=tick_labelsize)
-        ax.legend(loc="upper right", fontsize=16, ncol=2, handletextpad=0.1, columnspacing=0.2)
+        if not baseline is None:
+            ax.set_title("-".join(baseline), fontsize=text_fontsize)
+        if legend_kws is None:
+            ax.legend(loc="lower right", fontsize=text_fontsize, ncol=2, handletextpad=0.1,
+                      columnspacing=0.2)
+        else:
+            ax.legend(**legend_kws)
         return (fig, ax)
 
     def get_time_dit(self, insname="ft", unit_read="s"):
@@ -749,6 +987,39 @@ class GravityData(object):
             raise ValueError("The end time for {0} is meaningless!".format(self.catg))
         return time_end
 
+    def ruv3_mas(self, insname="ft", verbose=False):
+        """
+        Calculate the uv distance for the triangle with units: milli-arcsec^-1.
+
+        Parameters
+        ----------
+        insname : string
+            The instrument name, "ft" for fringe tracking or "sc" for science.
+        verbose : bool
+            Print more information if True.
+
+        Returns
+        -------
+        ruv3 : array
+            The maximum UV distance of each triangle and channel, units: milli-arcsec^-1.
+        """
+        ruv_mas = self.ruv_mas(insname=insname, verbose=verbose)
+        nt = self.dims["TRIANGLE"]
+        nc = self.dims["CHANNEL_{0}".format(insname.upper())]
+        ruv3 = np.zeros([nt, nc])
+        idxList = [(0, 1), (0, 2), (1, 2)] # The index of the telescope pairs of
+                                           # the three baselines of the triangle.
+        for loop_t in range(nt):
+            trg_list = self.triangle_si(loop_t)
+            ruv_t = []
+            for (idx1, idx2) in idxList:
+                si_list = [trg_list[idx1], trg_list[idx2]]
+                tn_list = self.list_tn(self.index_si(si_list)) # Get the name of the telescope pair
+                ruv_t.append(ruv_mas[self.index_baseline(tn_list)])
+            ruv_t = np.array(ruv_t)
+            ruv3[loop_t, :] = np.max(ruv_t, axis=0)
+        return ruv3
+
     def ruv_mas(self, insname="ft", verbose=False):
         """
         Calculate the uv distance with units: milli-arcsec^1.
@@ -794,50 +1065,240 @@ class GravityData(object):
         v_mas = v / wavelength / (180. / np.pi * 3.6e6)
         return (u_mas, v_mas)
 
-    def get_baseline_UT(self, baseline_index):
+    def list_tn(self, ti=None):
         """
-        Get the baseline of the telescope pairs in terms of telescope name.
+        List the name of the telescopes according to "OI_ARRAY:TEL_NAME".
 
         Parameters
         ----------
-        baseline_index : int
-            The index of the baseline, 0-5.
-        """
-        tel_name = self.get_data("OI_ARRAY:TEL_NAME", insname="aux")
-        sta_index = list(self.get_data("OI_ARRAY:STA_INDEX", insname="aux"))
-        vis_station = self.get_data("OI_VIS:STA_INDEX", insname="sc") # SC and FT provides the same information.
-        if self.catg in self.__catglist_p2vmred:
-            bsl_code = vis_station[0, baseline_index, :]
-        elif self.catg in self.__catglist_vis:
-            bsl_code = vis_station[baseline_index, :]
-        else:
-            raise ValueError("Self.catg ({0}) is not recognized!".format(self.catg))
-        bsl_list = []
-        for bsl in bsl_code:
-            bsl_list.append(tel_name[sta_index.index(bsl)])
-        return bsl_list
+        ti : (list of) int (optional)
+            The index of the telescope, 0~3 for GRAVITY.
 
-    def get_baseline_Tidx(self, baseline_index):
+        Returns
+        -------
+        tel_list : list
+            The list of telescope names.
         """
-        Get the baseline of the telescope pairs in terms of index 0~3.
+        tel_name = list(self.get_data("OI_ARRAY:TEL_NAME", insname="aux"))
+        if ti is None:
+            tel_list = tel_name
+        else:
+            tiList = np.atleast_1d(ti)
+            tel_list = []
+            for ti in tiList:
+                tel_list.append(tel_name[ti])
+        return tel_list
+
+    def list_si(self, ti=None):
+        """
+        List the index of the stations according to "OI_ARRAY:STA_INDEX".
 
         Parameters
         ----------
-        baseline_index : int
-            The index of the baseline, 0-5.
+        ti : (list of) int (optional)
+            The index of the telescope, 0~3 for GRAVITY.
+
+        Returns
+        -------
+        sta_list : list
+            The list of station indices.
         """
         sta_index = list(self.get_data("OI_ARRAY:STA_INDEX", insname="aux"))
+        if ti is None:
+            sta_list = sta_index
+        else:
+            tiList = np.atleast_1d(ti)
+            sta_list = []
+            for ti in tiList:
+                sta_list.append(sta_index[ti])
+        return sta_list
+
+    def index_tn(self, tn):
+        """
+        Get the telescope index from TEL_NAME.
+
+        Parameters
+        ----------
+        tn : (list of) string
+            The telescope name from "OI_ARRAY:TEL_NAME".
+
+        Returns
+        -------
+        idx : int or list
+            The index of the telescope, 0~3 for GRAVITY. If tn is a string of TEL_NAME,
+            return an int of the index.  If si is a list of TEL_NAME, return
+            a list of indices.
+        """
+        tel_name = self.list_tn()
+        tnList = np.atleast_1d(tn)
+        if len(tnList) == 1:
+            idx = tel_name.index(tnList[0])
+        else:
+            idx = []
+            for tn in tnList:
+                idx.append(tel_name.index(tn))
+        return idx
+
+    def index_si(self, si):
+        """
+        Get the telescope index from STA_INDEX.
+
+        Parameters
+        ----------
+        si : (list of) int
+            The station index from "OI_ARRAY:STA_INDEX".
+
+        Returns
+        -------
+        idx : int or list
+            The index of the telescope, 0~3 for GRAVITY. If si is an int of STA_INDEX,
+            return an int of the index.  If si is a list of STA_INDEX, return
+            a list of indices.
+        """
+        sta_index = self.list_si()
+        siList = np.atleast_1d(si)
+        if len(siList) == 1:
+            idx = sta_index.index(siList[0])
+        else:
+            idx = []
+            for si in siList:
+                idx.append(sta_index.index(si))
+        return idx
+
+    def baseline_si(self, bsl_index):
+        """
+        Get the station index of the baseline given the baseline index.
+
+        Parameters
+        ----------
+        bsl_index : int
+            The index of the baseline, 0-5.
+
+        Returns
+        -------
+        bsl_si : list
+            The list of station index of the baseline.
+        """
         vis_station = self.get_data("OI_VIS:STA_INDEX", insname="sc") # SC and FT provides the same information.
         if self.catg in self.__catglist_p2vmred:
-            bsl_code = vis_station[0, baseline_index, :]
+            bsl_si = list(vis_station[0, bsl_index, :])
         elif self.catg in self.__catglist_vis:
-            bsl_code = vis_station[baseline_index, :]
+            bsl_si = list(vis_station[bsl_index, :])
         else:
             raise ValueError("Self.catg ({0}) is not recognized!".format(self.catg))
-        bsl_list = []
-        for bsl in bsl_code:
-            bsl_list.append(sta_index.index(bsl))
-        return bsl_list
+        return bsl_si
+
+    def baseline_tn(self, bsl_index):
+        """
+        Get the telescope name of the baseline given the baseline index.
+
+        Parameters
+        ----------
+        bsl_index : int
+            The index of the baseline, 0-5.
+
+        Returns
+        -------
+        bsl_tn : list
+            The list of telescope name of the baseline.
+        """
+        bsl_si = self.baseline_si(bsl_index)
+        bsl_tn = self.list_tn(self.index_si(bsl_si))
+        return bsl_tn
+
+    def triangle_si(self, trg_index):
+        """
+        Get the station index of the triangle given the triangle index.
+
+        Parameters
+        ----------
+        trg_index : int
+            The index of the triangle, 0-3.
+
+        Returns
+        -------
+        trg_tn : list
+            The list of station index of the triangle.
+        """
+        assert self.catg in self.__catglist_vis
+        t3_station = self.get_data("OI_T3:STA_INDEX", insname="sc") # SC and FT provides the same information.
+        trg_si = list(t3_station[trg_index, :])
+        return trg_si
+
+    def triangle_tn(self, trg_index):
+        """
+        Get the telescope name of the triangle given the triangle index.
+
+        Parameters
+        ----------
+        trg_index : int
+            The index of the triangle, 0-3.
+
+        Returns
+        -------
+        trg_tn : list
+            The list of telescope name of the triangle.
+        """
+        trg_si = self.triangle_si(trg_index)
+        trg_tn = self.list_tn(self.index_si(trg_si))
+        return trg_tn
+
+    def index_baseline(self, tn_list, verbose=False):
+        """
+        Get the index of the baseline dimension (0~5).
+
+        Parameters
+        ----------
+        tn_list : list
+            The list of two telescope names, e.g., ["UT4", "UT3"].
+        verbose : bool, default: False
+            Print auxiliary information if True.
+
+        Returns
+        -------
+        bsl_index : int
+            The index of the baseline dimension for the requested telescope pair.
+        """
+        assert len(tn_list) == 2
+        si_list = self.list_si(self.index_tn(tn_list))
+        bsl_index = None
+        for loop_b in range(self.dims["BASELINE"]):
+            bsl_list = self.baseline_si(loop_b)
+            if (bsl_list[0] == np.max(si_list)) & (bsl_list[1] == np.min(si_list)):
+                bsl_index = loop_b
+                break
+        if verbose & (bsl_index is None):
+            print("The baseline ({0}) is not recognized!".format(tn_list))
+        return bsl_index
+
+    def index_triangle(self, tn_list, verbose=False):
+        """
+        Get the index of the triangle dimension (0~3).
+
+        Parameters
+        ----------
+        tn_list : list
+            The list of three telescope names, e.g., ["UT4", "UT3", "UT2"].
+        verbose : bool, default: False
+            Print auxiliary information if True.
+
+        Returns
+        -------
+        trg_index : int
+            The index of the triangle dimension for the requested telescope triangle.
+        """
+        assert len(tn_list) == 3
+        si_list = self.list_si(self.index_tn(tn_list))
+        si_list = np.sort(si_list)[::-1] # The convention of GRAVITY
+        trg_index = None
+        for loop_t in range(self.dims["TRIANGLE"]):
+            trg_list = self.triangle_si(loop_t)
+            if (trg_list[0] == si_list[0]) & (trg_list[1] == si_list[1]) & (trg_list[2] == si_list[2]):
+                trg_index = loop_t
+                break
+        if verbose & (trg_index is None):
+            print("The triangle ({0}) is not recognized!".format(tn_list))
+        return trg_index
 
     def get_info(self, verbose=True):
         """
