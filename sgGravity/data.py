@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from copy import deepcopy
 
-__all__ = ["GravitySet", "GravityData", "GravityVis", "GravityP2VMRED"]
+__all__ = ["GravitySet", "GravityData", "GravityVis", "GravityP2VMRED", "gravity_DimLen"]
 
 class GravitySet(object):
     """
@@ -34,16 +34,6 @@ class GravitySet(object):
                 print("The gd_list is used so file_list is ignored!")
         self.gd_list = gd_list
         self.__length = len(gd_list)
-        self.dims = {
-            "BASELINE": 6,
-            "TELESCOPE": 4,
-            "TRIANGLE": 4,
-            "CHANNEL_FT": 5,
-            "CHANNEL_SC": 210,
-            "OI_VIS:STA_INDEX": 2,
-            "OI_VIS2:STA_INDEX": 2,
-            "OI_FLUX:STA_INDEX": 1,
-        }
 
     def plot_uv(self, insname="ft", FigAx=None, colorcode=None, scatter_kws=None,
                 legend_kws=None, ignored_channels=None, label_fontsize=24, tick_labelsize=18,
@@ -268,7 +258,7 @@ class GravitySet(object):
             errorbar_kws["marker"] = "."
         if not (("ls" in kList) or ("linestyle" in kList)):
             errorbar_kws["ls"] = "none"
-        nbaseline = self.dims["BASELINE"]
+        nbaseline = self.get_dimlen("BASELINE")
         flag = 0
         for gd in self.gd_list:
             for bsl in range(nbaseline):
@@ -549,21 +539,13 @@ class GravityData(object):
         self.__catglist_vis = ["SINGLE_SCI_VIS", "SINGLE_SCI_VIS_CALIBRATED", "SINGLE_CAL_VIS",
                                "DUAL_SCI_VIS", "DUAL_SCI_VIS_CALIBRATED"]
         self.__catglist_p2vmred = ["SINGLE_SCI_P2VMRED", "DUAL_SCI_P2VMRED", "SINGLE_CAL_P2VMRED"]
-        self.dims = {
-            "BASELINE": 6,
-            "TELESCOPE": 4,
-            "TRIANGLE": 4,
-            "CHANNEL_FT": 5,
-            "CHANNEL_SC": 210,
-            "OI_VIS:STA_INDEX": 2,
-            "OI_VIS2:STA_INDEX": 2,
-            "OI_FLUX:STA_INDEX": 1,
-        }
+        self.__polalist = ["P1", "P2"]
+        self.__inslist = ["FT", "FT_P1", "FT_P2", "SC", "SC_P1", "SC_P2"]
         self.dim2 = {
-            "OI_VIS" : self.dims["BASELINE"],
-            "OI_VIS2": self.dims["BASELINE"],
-            "OI_FLUX": self.dims["TELESCOPE"],
-            "OI_T3": self.dims["TRIANGLE"],
+            "OI_VIS" : gravity_DimLen("BASELINE"),
+            "OI_VIS2": gravity_DimLen("BASELINE"),
+            "OI_FLUX": gravity_DimLen("TELESCOPE"),
+            "OI_T3": gravity_DimLen("TRIANGLE"),
         }
         #-> Read in the fits file hdulist is None
         if hdulist is None:
@@ -580,6 +562,9 @@ class GravityData(object):
         self.polamode = header.get("HIERARCH ESO INS POLA MODE", None)
         if not self.polamode in ["COMBINED", "SPLIT"]:
             raise ValueError("The polarization mode ({0}) is not recognized!".format(self.polamode))
+        self.specres = header.get("HIERARCH ESO INS SPEC RES", None)
+        if not self.specres in ["LOW", "MEDIUM", "HIGH"]:
+            raise ValueError("The spectral resolution ({0}) is not recognized!".format(self.specres))
         self.obsdate = datetime.datetime.strptime(header["DATE-OBS"], '%Y-%m-%dT%H:%M:%S')
         self.object = header["OBJECT"]
         self.ra=header['RA']
@@ -631,6 +616,19 @@ class GravityData(object):
         ax : Axes object
         cb : Colorbar object (optional)
         """
+        insname = insname.upper()
+        assert insname in self.__inslist
+        if (self.polamode == "SPLIT") & (len(insname) == 2):
+            for pk in self.__polalist:
+                FigAx = self.plot_uv(insname="{0}_{1}".format(insname, pk), colorcode=colorcode,
+                                     FigAx=FigAx, scatter_kws=deepcopy(scatter_kws),
+                                     legend_kws=deepcopy(legend_kws), ignored_channels=ignored_channels,
+                                     label_fontsize=label_fontsize, tick_labelsize=tick_labelsize,
+                                     text_fontsize=text_fontsize, show_colorbar=show_colorbar,
+                                     verbose=verbose)
+                legend_kws = None
+            return FigAx
+        #-> For a single polarization situation
         assert self.catg in self.__catglist_vis
         #-> Get the data
         u, v = self.uv_mas(insname=insname, verbose=verbose)
@@ -650,7 +648,7 @@ class GravityData(object):
             assert u.shape == c.shape
         #--> Select channels
         if not ignored_channels is None:
-            chnList = range(self.dims["CHANNEL_{0}".format(insname.upper())])
+            chnList = range(self.get_dimlen("CHANNEL_{0}".format(insname)))
             for cidx in ignored_channels:
                 chnList.remove(cidx)
             u = u[:, chnList]
@@ -680,7 +678,7 @@ class GravityData(object):
         kList = scatter_kws.keys()
         if not "s" in kList:
             scatter_kws["s"] = 60
-        for loop_b in range(self.dims["BASELINE"]):
+        for loop_b in range(self.get_dimlen("BASELINE")):
             if not legend_kws is None:
                 scatter_kws["label"] = "{0[0]}-{0[1]}".format(self.baseline_tn(loop_b))
             if (not "c" in kList) & (not c is None):
@@ -770,6 +768,20 @@ class GravityData(object):
         fig : Figure object
         ax : Axes object
         """
+        insname = insname.upper()
+        assert insname in self.__inslist
+        #-> If the split polarizations are required to be plotted together.
+        if (self.polamode == "SPLIT") & (len(insname) == 2):
+            for pk in self.__polalist:
+                FigAx = self.plot_visibility(insname="{0}_{1}".format(insname, pk),
+                                             visdata=visdata, FigAx=FigAx, flagged=flagged,
+                                             errorbar_kws=deepcopy(errorbar_kws),
+                                             legend_kws=deepcopy(legend_kws), ignored_channels=ignored_channels,
+                                             label_fontsize=label_fontsize, tick_labelsize=tick_labelsize,
+                                             text_fontsize=text_fontsize, verbose=verbose)
+                legend_kws = None
+            return FigAx
+        #-> For a single polarization situation
         assert self.catg in self.__catglist_vis
         #-> Get the data
         ruv = self.ruv_mas(insname=insname, verbose=verbose)
@@ -796,7 +808,7 @@ class GravityData(object):
             vise = self.get_data(visekw, insname=insname, verbose=verbose)
         #--> Select channels
         if not ignored_channels is None:
-            chnList = range(self.dims["CHANNEL_{0}".format(insname.upper())])
+            chnList = range(self.get_dimlen("CHANNEL_{0}".format(insname)))
             for cidx in ignored_channels:
                 chnList.remove(cidx)
             ruv  = ruv[:, chnList]
@@ -815,7 +827,7 @@ class GravityData(object):
             errorbar_kws["marker"] = "o"
         if not (("ls" in kList) or ("linestyle" in kList)):
             errorbar_kws["ls"] = "none"
-        for loop_b in range(self.dims["BASELINE"]):
+        for loop_b in range(self.get_dimlen("BASELINE")):
             if not "color" in kList:
                 errorbar_kws["color"] = "C{0}".format(loop_b)
             if not (("mec" in kList) or ("markeredgecolor" in kList)):
@@ -876,6 +888,19 @@ class GravityData(object):
         fig : Figure object
         ax : Axes object
         """
+        insname = insname.upper()
+        assert insname in self.__inslist
+        #-> If the split polarizations are required to be plotted together.
+        if (self.polamode == "SPLIT") & (len(insname) == 2):
+            for pk in self.__polalist:
+                FigAx = self.plot_t3(insname="{0}_{1}".format(insname, pk), t3data=t3data,
+                                     FigAx=FigAx, flagged=flagged, errorbar_kws=deepcopy(errorbar_kws),
+                                     legend_kws=deepcopy(legend_kws), ignored_channels=ignored_channels,
+                                     label_fontsize=label_fontsize, tick_labelsize=tick_labelsize,
+                                     text_fontsize=text_fontsize, verbose=verbose)
+                legend_kws = None
+            return FigAx
+        #-> For a single polarization situation
         assert self.catg in self.__catglist_vis
         #-> Get the data
         ruv3 = self.ruv3_mas(insname=insname, verbose=verbose)
@@ -898,7 +923,7 @@ class GravityData(object):
             t3e = self.get_data(t3ekw, insname=insname, verbose=verbose)
         #--> Select channels
         if not ignored_channels is None:
-            chnList = range(self.dims["CHANNEL_{0}".format(insname.upper())])
+            chnList = range(self.get_dimlen("CHANNEL_{0}".format(insname)))
             for cidx in ignored_channels:
                 chnList.remove(cidx)
             ruv3 = ruv3[:, chnList]
@@ -917,7 +942,7 @@ class GravityData(object):
             errorbar_kws["marker"] = "o"
         if not (("ls" in kList) or ("linestyle" in kList)):
             errorbar_kws["ls"] = "none"
-        for loop_t in range(self.dims["TRIANGLE"]):
+        for loop_t in range(self.get_dimlen("TRIANGLE")):
             if not "color" in kList:
                 errorbar_kws["color"] = "C{0}".format(loop_t)
             if not (("mec" in kList) or ("markeredgecolor" in kList)):
@@ -993,18 +1018,34 @@ class GravityData(object):
         fig : Figure object
         ax : Axes object
         """
+        insname = insname.upper()
+        assert insname in self.__inslist
+        #-> If the split polarizations are required to be plotted together.
+        if (self.polamode == "SPLIT") & (len(insname) == 2):
+            for pk in self.__polalist:
+                FigAx = self.plot_p2vmred(insname="{0}_{1}".format(insname, pk),
+                                          xdata=xdata, ydata=ydata, FigAx=FigAx,
+                                          flagged=flagged, mask=mask, baseline=baseline,
+                                          ignored_channels=ignored_channels, xperc=xperc,
+                                          yperc=yperc, cperc=cperc, plot_kws=deepcopy(plot_kws),
+                                          legend_kws=deepcopy(legend_kws), label_fontsize=label_fontsize,
+                                          tick_labelsize=tick_labelsize, text_fontsize=text_fontsize,
+                                          point_limit=point_limit, verbose=verbose)
+                legend_kws = None
+            return FigAx
+        #-> For a single polarization situation
         assert self.catg in self.__catglist_p2vmred
         #-> Get data
         if flagged:
-            x = self.get_data_flagged(xdata, mask=mask, insname="ft", verbose=verbose)
-            y = self.get_data_flagged(ydata, mask=mask, insname="ft", verbose=verbose)
+            x = self.get_data_flagged(xdata, mask=mask, insname=insname, verbose=verbose)
+            y = self.get_data_flagged(ydata, mask=mask, insname=insname, verbose=verbose)
         else:
-            x = self.get_data(xdata, insname="ft", verbose=verbose)
-            y = self.get_data(ydata, insname="ft", verbose=verbose)
+            x = self.get_data(xdata, insname=insname, verbose=verbose)
+            y = self.get_data(ydata, insname=insname, verbose=verbose)
         #--> Select channels
         ndim = len(x.shape)
         if not ignored_channels is None:
-            chnList = range(self.dims["CHANNEL_{0}".format(insname.upper())])
+            chnList = range(self.get_dimlen("CHANNEL_{0}".format(insname)))
             for cidx in ignored_channels:
                 chnList.remove(cidx)
             if ndim == 2:
@@ -1091,11 +1132,19 @@ class GravityData(object):
             plot_kws["alpha"] = 0.05
         ax.plot(x, y, **plot_kws)
         for loop_x in range(len(xPercs)):
+            if legend_kws is None:
+                label = None
+            else:
+                label = "{0}%".format(xperc[loop_x])
             ax.axvline(x=xPercs[loop_x], ymin=0.9, ymax=1, ls="--", lw=2, color=cPercs[loop_x],
-                       label="{0}%".format(xperc[loop_x]))
+                       label=label)
         for loop_y in range(len(yPercs)):
+            if legend_kws is None:
+                label = None
+            else:
+                label = "{0}%".format(yperc[loop_y])
             ax.axhline(y=yPercs[loop_y], xmin=0.9, xmax=1, ls=":", lw=2, color=cPercs[loop_y],
-                       label="{0}%".format(yperc[loop_y]))
+                       label=label)
         ax.set_xlabel(xlabel, fontsize=label_fontsize)
         ax.set_ylabel(ylabel, fontsize=label_fontsize)
         ax.set_yscale("log")
@@ -1103,11 +1152,12 @@ class GravityData(object):
         ax.tick_params(axis='both', which='major', labelsize=tick_labelsize)
         if not baseline is None:
             ax.set_title("-".join(baseline), fontsize=text_fontsize)
-        if legend_kws is None:
-            ax.legend(loc="lower right", fontsize=text_fontsize, ncol=2, handletextpad=0.1,
-                      columnspacing=0.2)
-        else:
-            ax.legend(**legend_kws)
+        if not legend_kws is None:
+            if len(legend_kws.keys()) == 0:
+                ax.legend(loc="lower right", fontsize=text_fontsize, ncol=2, handletextpad=0.1,
+                        columnspacing=0.2)
+            else:
+                ax.legend(**legend_kws)
         return (fig, ax)
 
     def get_time_dit(self, insname="ft", unit_read="s"):
@@ -1207,8 +1257,8 @@ class GravityData(object):
             The maximum UV distance of each triangle and channel, units: milli-arcsec^-1.
         """
         ruv_mas = self.ruv_mas(insname=insname, verbose=verbose)
-        nt = self.dims["TRIANGLE"]
-        nc = self.dims["CHANNEL_{0}".format(insname.upper())]
+        nt = self.get_dimlen("TRIANGLE")
+        nc = self.get_dimlen("CHANNEL_{0}".format(insname))
         ruv3 = np.zeros([nt, nc])
         idxList = [(0, 1), (0, 2), (1, 2)] # The index of the telescope pairs of
                                            # the three baselines of the triangle.
@@ -1259,8 +1309,6 @@ class GravityData(object):
         (u_mas, v_mas) : tuple of arrays
             The UV coordinates of each baseline and channel, units: milli-arcsec^-1.
         """
-        if not insname.upper() in ["SC", "FT"]:
-            raise ValueError("The insname ({0}) is not recognized!".format(insname))
         u = self.get_data_fulldim("OI_VIS:UCOORD", insname=insname, verbose=verbose)
         v = self.get_data_fulldim("OI_VIS:VCOORD", insname=insname, verbose=verbose)
         wavelength = self.get_data("OI_WAVELENGTH:EFF_WAVE", insname=insname, verbose=verbose)
@@ -1382,7 +1430,10 @@ class GravityData(object):
         bsl_si : list
             The list of station index of the baseline.
         """
-        vis_station = self.get_data("OI_VIS:STA_INDEX", insname="sc") # SC and FT provides the same information.
+        if self.polamode == "COMBINED":
+            vis_station = self.get_data("OI_VIS:STA_INDEX", insname="sc") # SC and FT provides the same information.
+        else:
+            vis_station = self.get_data("OI_VIS:STA_INDEX", insname="sc_p1") # SC and FT provides the same information.
         if self.catg in self.__catglist_p2vmred:
             bsl_si = list(vis_station[0, bsl_index, :])
         elif self.catg in self.__catglist_vis:
@@ -1424,7 +1475,10 @@ class GravityData(object):
             The list of station index of the triangle.
         """
         assert self.catg in self.__catglist_vis
-        t3_station = self.get_data("OI_T3:STA_INDEX", insname="sc") # SC and FT provides the same information.
+        if self.polamode == "COMBINED":
+            t3_station = self.get_data("OI_T3:STA_INDEX", insname="sc") # SC and FT provides the same information.
+        else:
+            t3_station = self.get_data("OI_T3:STA_INDEX", insname="sc_p1") # SC and FT provides the same information.
         trg_si = list(t3_station[trg_index, :])
         return trg_si
 
@@ -1465,7 +1519,7 @@ class GravityData(object):
         assert len(tn_list) == 2
         si_list = np.sort(self.list_si(self.index_tn(tn_list)))
         bsl_index = None
-        for loop_b in range(self.dims["BASELINE"]):
+        for loop_b in range(self.get_dimlen("BASELINE")):
             bsl_list = np.sort(self.baseline_si(loop_b))
             if (bsl_list == si_list).all():
                 bsl_index = loop_b
@@ -1493,7 +1547,7 @@ class GravityData(object):
         assert len(tn_list) == 3
         si_list = np.sort(self.list_si(self.index_tn(tn_list)))
         trg_index = None
-        for loop_t in range(self.dims["TRIANGLE"]):
+        for loop_t in range(self.get_dimlen("TRIANGLE")):
             trg_list = np.sort(self.triangle_si(loop_t))
             if (trg_list == si_list).all():
                 trg_index = loop_t
@@ -1696,6 +1750,17 @@ class GravityData(object):
        """
        return self.data.hdulist.filename()
 
+    def get_dimlen(self, keyword):
+        """
+        Get the length of the given dimension.
+
+        Parameters
+        ----------
+        keyword : string
+            The keyword of the data dimension.
+        """
+        return gravity_DimLen(keyword, self.specres)
+
 
 class GravityVis(object):
     """
@@ -1716,21 +1781,12 @@ class GravityVis(object):
         #-> Prior properties
         self.__catglist = ["SINGLE_SCI_VIS", "SINGLE_SCI_VIS_CALIBRATED", "SINGLE_CAL_VIS",
                            "DUAL_SCI_VIS", "DUAL_SCI_VIS_CALIBRATED"]
-        self.dims = {
-            "BASELINE": 6,
-            "TELESCOPE": 4,
-            "TRIANGLE": 4,
-            "CHANNEL_FT": 5,
-            "CHANNEL_SC": 210,
-            "OI_VIS:STA_INDEX": 2,
-            "OI_VIS2:STA_INDEX": 2,
-            "OI_FLUX:STA_INDEX": 1,
-        }
+        self.__inslist = ["FT", "FT_P1", "FT_P2", "SC", "SC_P1", "SC_P2", "AUX"]
         self.dim2 = {
-            "OI_VIS" : self.dims["BASELINE"],
-            "OI_VIS2": self.dims["BASELINE"],
-            "OI_FLUX": self.dims["TELESCOPE"],
-            "OI_T3": self.dims["TRIANGLE"],
+            "OI_VIS" : gravity_DimLen("BASELINE"),
+            "OI_VIS2": gravity_DimLen("BASELINE"),
+            "OI_FLUX": gravity_DimLen("TELESCOPE"),
+            "OI_T3": gravity_DimLen("TRIANGLE"),
         }
         self.datakey_list = ["OI_VIS", "OI_VIS2", "OI_T3", "OI_FLUX"]
         #-> Read in the fits file hdulist is None
@@ -1751,6 +1807,9 @@ class GravityVis(object):
         self.polamode = header.get("HIERARCH ESO INS POLA MODE", None)
         if not self.polamode in ["COMBINED", "SPLIT"]:
             raise ValueError("The polarization mode ({0}) is not recognized!".format(self.polamode))
+        self.specres = header.get("HIERARCH ESO INS SPEC RES", None)
+        if not self.specres in ["LOW", "MEDIUM", "HIGH"]:
+            raise ValueError("The spectral resolution ({0}) is not recognized!".format(self.specres))
         self.obsdate = datetime.datetime.strptime(header["DATE-OBS"], "%Y-%m-%dT%H:%M:%S")
         self.object = header["OBJECT"]
         self.ra=header['RA']
@@ -1803,8 +1862,8 @@ class GravityVis(object):
         hdulist = self.hdulist
         keyword = keyword.upper()
         insname = insname.upper()
-        if not ((insname == "FT") | (insname == "SC") | (insname == "AUX")):
-            errortext = "The insname ({0}) is incorrect!  It should be ft, sc, or aux, case free.".format(insname)
+        if not insname in self.__inslist:
+            errortext = "The insname ({0}) is incorrect!".format(insname)
             raise KeyError(errortext)
         insname = "GRAVITY_{0}".format(insname)
         extList = []
@@ -1880,8 +1939,8 @@ class GravityVis(object):
         else:
             ndim2 = self.dim2[extName]
         insname = insname.upper()
-        if (insname == "FT") or (insname == "SC"):
-            nchn = self.dims["CHANNEL_{0}".format(insname)]
+        if insname in self.__inslist[:-1]:
+            nchn = self.get_dimlen("CHANNEL_{0}".format(insname))
         else:
             raise ValueError("Cannot recognize insname ({0})!".format(insname))
         data_array = self.get_data(keyword, insname=insname, verbose=verbose)
@@ -1948,6 +2007,17 @@ class GravityVis(object):
         """
         return self.qc_dict.get(keyword, None)
 
+    def get_dimlen(self, keyword):
+        """
+        Get the length of the given dimension.
+
+        Parameters
+        ----------
+        keyword : string
+            The keyword of the data dimension.
+        """
+        return gravity_DimLen(keyword, self.specres)
+
 
 class GravityP2VMRED(object):
     """
@@ -1967,21 +2037,12 @@ class GravityP2VMRED(object):
         """
         #-> Prior properties
         self.__catglist = ["SINGLE_SCI_P2VMRED", "DUAL_SCI_P2VMRED", "SINGLE_CAL_P2VMRED"]
-        self.dims = {
-            "BASELINE": 6,
-            "TELESCOPE": 4,
-            "TRIANGLE": 4,
-            "CHANNEL_FT": 5,
-            "CHANNEL_SC": 210,
-            "OI_VIS:STA_INDEX": 2,
-            "OI_VIS2:STA_INDEX": 2,
-            "OI_FLUX:STA_INDEX": 1,
-        }
+        self.__inslist = ["FT", "FT_P1", "FT_P2", "SC", "SC_P1", "SC_P2", "AUX"]
         self.dim2 = {
-            "OI_VIS" : self.dims["BASELINE"],
-            "OI_VIS2": self.dims["BASELINE"],
-            "OI_FLUX": self.dims["TELESCOPE"],
-            "OI_T3": self.dims["TRIANGLE"],
+            "OI_VIS" : gravity_DimLen("BASELINE"),
+            "OI_VIS2": gravity_DimLen("BASELINE"),
+            "OI_FLUX": gravity_DimLen("TELESCOPE"),
+            "OI_T3": gravity_DimLen("TRIANGLE"),
         }
         self.datakey_list = ["OI_VIS", "OI_VIS2", "OI_T3", "OI_FLUX"]
         #-> Read in the fits file hdulist is None
@@ -2002,6 +2063,9 @@ class GravityP2VMRED(object):
         self.polamode = header.get("HIERARCH ESO INS POLA MODE", None)
         if not self.polamode in ["COMBINED", "SPLIT"]:
             raise ValueError("The polarization mode ({0}) is not recognized!".format(self.polamode))
+        self.specres = header.get("HIERARCH ESO INS SPEC RES", None)
+        if not self.specres in ["LOW", "MEDIUM", "HIGH"]:
+            raise ValueError("The spectral resolution ({0}) is not recognized!".format(self.specres))
         self.obsdate = datetime.datetime.strptime(header["DATE-OBS"], "%Y-%m-%dT%H:%M:%S")
         self.object = header["OBJECT"]
         self.ra=header['RA']
@@ -2048,10 +2112,8 @@ class GravityP2VMRED(object):
         hdulist = self.hdulist
         keyword = keyword.upper()
         insname = insname.upper()
-        #if not ((insname == "FT") | (insname == "SC") | (insname == "AUX")):
-        if not insname in ["FT", "FT_P1", "FT_P2", "SC", "SC_P1", "SC_P2", "AUX"]:
-            errortext = "The insname ({0}) is incorrect!  It should be FT, FT_P1, "+\
-                        "FT_P2, SC, SC_P1, SC_P2, or AUX, case free.".format(insname)
+        if not insname in self.__inslist:
+            errortext = "The insname ({0}) is incorrect!".format(insname)
             raise KeyError(errortext)
         insname = "GRAVITY_{0}".format(insname)
         extList = []
@@ -2136,8 +2198,8 @@ class GravityP2VMRED(object):
         else:
             ndim2 = self.dim2[extName]
         insname = insname.upper()
-        if (insname == "FT") or (insname == "SC"):
-            nchn = self.dims["CHANNEL_{0}".format(insname)]
+        if insname in self.__inslist[:-1]:
+            nchn = self.get_dimlen("CHANNEL_{0}".format(insname))
         else:
             raise ValueError("Cannot recognize insname ({0})!".format(insname))
         data_array = self.get_data(keyword, insname=insname, verbose=verbose)
@@ -2202,3 +2264,60 @@ class GravityP2VMRED(object):
         The qc data or None if the keyword is not found.
         """
         return self.qc_dict.get(keyword, None)
+
+    def get_dimlen(self, keyword):
+        """
+        Get the length of the given dimension.
+
+        Parameters
+        ----------
+        keyword : string
+            The keyword of the data dimension.
+        """
+        return gravity_DimLen(keyword, self.specres)
+
+
+def gravity_DimLen(keyword, specres=None):
+    """
+    Get the dimension length of the GRAVITY data.
+
+    Parameters
+    ----------
+    keyword : string
+        The keyword of the data dimension.
+    specres : string (optional)
+        The mode of resolution only works for CHANNEL_SC data.
+    """
+    dimDict = {
+        "BASELINE": 6,
+        "TELESCOPE": 4,
+        "TRIANGLE": 4,
+        "CHANNEL_FT": 5,
+        "CHANNEL_SC_LOW": 14,
+        "CHANNEL_SC_MEDIUM": 210,
+        "CHANNEL_SC_HIGH": 1800, # Not accurate!!!
+        "OI_VIS:STA_INDEX": 2,
+        "OI_VIS2:STA_INDEX": 2,
+        "OI_FLUX:STA_INDEX": 1,
+    }
+    keyword = keyword.upper()
+    #-> Test : connection
+    kwsList = keyword.split(":")
+    if len(kwsList) > 1:
+        return dimDict[keyword]
+    #-> Test _ connection
+    kwsList = keyword.split("_")
+    if len(kwsList) > 3:
+        raise KeyError("The keyword ({0}) is not recognized!".format(keyword))
+    elif len(kwsList) == 3:
+        keyword = "_".join(kwsList[:-1])
+    elif len(kwsList) == 1:
+        return dimDict[keyword]
+    #-> Deal with *_* situation
+    kwsList = keyword.split("_")
+    if kwsList[1] != "SC":
+        return dimDict[keyword]
+    else:
+        if not specres is None:
+            keyword = "{0}_{1}".format(keyword, specres.upper())
+        return dimDict[keyword]
