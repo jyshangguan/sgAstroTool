@@ -3,6 +3,7 @@ import numpy as np
 from astropy.io import fits
 from astropy import units as u
 import matplotlib.pyplot as plt
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 from copy import deepcopy
 
 __all__ = ["GravitySet", "GravityData", "GravityVis", "GravityP2VMRED"]
@@ -43,6 +44,58 @@ class GravitySet(object):
             "OI_VIS2:STA_INDEX": 2,
             "OI_FLUX:STA_INDEX": 1,
         }
+
+    def plot_uv(self, insname="ft", FigAx=None, colorcode=None, scatter_kws=None,
+                legend_kws=None, ignored_channels=None, label_fontsize=24, tick_labelsize=18,
+                text_fontsize=16, verbose=False):
+        """
+        Plot the UV coverage of the data.
+
+        Parameters
+        ----------
+        insname : string
+            The instrument name, "ft" or "sc".
+        colorcode : string (optional)
+            The keyword of the data used for the color code, vis2 or visamp, or
+            other keywords.  The data should have the same shape as the uv coordinates.
+        FigAx : tuple (optional)
+            The Figure, Axes and (optional) Colorbar objects generated in prior.
+        scatter_kws : dict (optional)
+            The keywords for plt.scatter() function
+        legend_kws : dict (optional)
+            The keywords for plt.legend() function
+        ignored_channels : list (optional)
+            The list of channel indices (0~4 for FT and 0~209 for SC) ignored in
+            the plot.
+        label_fontsize : float, default: 24
+            The fontsize of the labels of both axes.
+        tick_labelsize : float, default: 18
+            The fontsize of the ticklabel of both axes.
+        text_fontsize : float, default: 16
+            The fontsize of the text in the figure.
+        verbose : bool, default: False
+            Print auxiliary information if True.
+
+        Returns
+        -------
+        fig : Figure object
+        ax : Axes object
+        cb : Colorbar object (optional)
+        """
+        if FigAx is None:
+            fig = plt.figure(figsize=(7, 7))
+            ax  = plt.gca()
+            FigAx = (fig, ax)
+        #-> Plot each data
+        for loop in range(self.__length):
+            if loop > 0:
+                legend_kws = None
+            FigAx = self[loop].plot_uv(insname=insname, FigAx=FigAx, colorcode=colorcode,
+                                       scatter_kws=deepcopy(scatter_kws), legend_kws=legend_kws,
+                                       ignored_channels=ignored_channels, label_fontsize=label_fontsize,
+                                       tick_labelsize=tick_labelsize, text_fontsize=text_fontsize,
+                                       verbose=verbose)
+        return FigAx
 
     def plot_visibility(self, insname="ft", visdata="vis2", FigAx=None, flagged=True,
                         errorbar_kws=None, legend_kws=None, ignored_channels=None,
@@ -90,10 +143,10 @@ class GravitySet(object):
             if loop > 0:
                 legend_kws = None
             self[loop].plot_visibility(insname=insname, visdata=visdata, FigAx=(fig, ax),
-                                       flagged=flagged, errorbar_kws=None, legend_kws=legend_kws,
-                                       ignored_channels=ignored_channels, label_fontsize=label_fontsize,
-                                       tick_labelsize=tick_labelsize, text_fontsize=text_fontsize,
-                                       verbose=verbose)
+                                       flagged=flagged, errorbar_kws=deepcopy(errorbar_kws),
+                                       legend_kws=legend_kws, ignored_channels=ignored_channels,
+                                       label_fontsize=label_fontsize, tick_labelsize=tick_labelsize,
+                                       text_fontsize=text_fontsize, verbose=verbose)
         return (fig, ax)
 
     def plot_t3(self, insname="ft", t3data="phi", FigAx=None, flagged=True, errorbar_kws=None,
@@ -143,10 +196,10 @@ class GravitySet(object):
             if loop > 0:
                 legend_kws = None
             self[loop].plot_t3(insname=insname, t3data=t3data, FigAx=(fig, ax),
-                               flagged=flagged, errorbar_kws=None, legend_kws=legend_kws,
-                               ignored_channels=ignored_channels, label_fontsize=label_fontsize,
-                               tick_labelsize=tick_labelsize, text_fontsize=text_fontsize,
-                               verbose=verbose)
+                               flagged=flagged, errorbar_kws=deepcopy(errorbar_kws),
+                               legend_kws=legend_kws, ignored_channels=ignored_channels,
+                               label_fontsize=label_fontsize, tick_labelsize=tick_labelsize,
+                               text_fontsize=text_fontsize, verbose=verbose)
         return (fig, ax)
 
     def plot_strehl(self, visdata="vis2", channel=3, FigAx=None, errorbar_kws=None,
@@ -529,6 +582,137 @@ class GravityData(object):
         else:
             raise ValueError("The catg ({0}) is not supported!".format(self.catg))
 
+    def plot_uv(self, insname="ft", colorcode=None, FigAx=None, scatter_kws=None,
+                legend_kws=None, ignored_channels=None, label_fontsize=24, tick_labelsize=18,
+                text_fontsize=16, verbose=False):
+        """
+        Plot the UV coverage of the data.
+
+        Parameters
+        ----------
+        insname : string
+            The instrument name, "ft" or "sc".
+        colorcode : string (optional)
+            The keyword of the data used for the color code, vis2 or visamp, or
+            other keywords.  The data should have the same shape as the uv coordinates.
+        FigAx : tuple (optional)
+            The Figure, Axes and (optional) Colorbar objects generated in prior.
+        scatter_kws : dict (optional)
+            The keywords for plt.scatter() function
+        legend_kws : dict (optional)
+            The keywords for plt.legend() function
+        ignored_channels : list (optional)
+            The list of channel indices (0~4 for FT and 0~209 for SC) ignored in
+            the plot.
+        label_fontsize : float, default: 24
+            The fontsize of the labels of both axes.
+        tick_labelsize : float, default: 18
+            The fontsize of the ticklabel of both axes.
+        text_fontsize : float, default: 16
+            The fontsize of the text in the figure.
+        verbose : bool, default: False
+            Print auxiliary information if True.
+
+        Returns
+        -------
+        fig : Figure object
+        ax : Axes object
+        cb : Colorbar object (optional)
+        """
+        assert self.catg in self.__catglist_vis
+        #-> Get the data
+        u, v = self.uv_mas(insname=insname, verbose=verbose)
+        if colorcode is None:
+            c = None
+        else:
+            colorcode = colorcode.upper()
+            if colorcode in ["VIS2", "OI_VIS2:VIS2DATA"]:
+                c = self.get_data("OI_VIS2:VIS2DATA", insname=insname, verbose=verbose)
+                clabel = r"Vis.$^2$"
+            elif colorcode in ["VISAMP", "OI_VIS:VISAMP"]:
+                c = self.get_data("OI_VIS:VISAMP", insname=insname, verbose=verbose)
+                clabel = "Vis. Amp."
+            else:
+                c = self.get_data(colorcode, insname=insname, verbose=verbose)
+                clabel = colorcode
+            assert u.shape == c.shape
+        #--> Select channels
+        if not ignored_channels is None:
+            chnList = range(self.dims["CHANNEL_{0}".format(insname.upper())])
+            for cidx in ignored_channels:
+                chnList.remove(cidx)
+            u = u[:, chnList]
+            v = v[:, chnList]
+            if not c is None:
+                c = c[:, chnList]
+        #-> Plot
+        if FigAx is None:
+            fig = plt.figure(figsize=(7, 7))
+            ax  = plt.gca()
+            cb  = None
+        else:
+            nfa = len(FigAx)
+            if nfa == 2:
+                fig, ax = FigAx
+                cb = None
+            elif nfa == 3:
+                fig, ax, cb = FigAx
+            else:
+                raise ValueError("The length of FigAx ({0}) is not correct!".format(nfa))
+        if scatter_kws is None:
+            scatter_kws = {}
+        kList = scatter_kws.keys()
+        if not "s" in kList:
+            scatter_kws["s"] = 60
+        for loop_b in range(self.dims["BASELINE"]):
+            if not legend_kws is None:
+                scatter_kws["label"] = "{0[0]}-{0[1]}".format(self.baseline_tn(loop_b))
+            if (not "c" in kList) & (not c is None):
+                scatter_kws["c"] = [c[loop_b, :], c[loop_b, :]]
+                if not "marker" in kList:
+                    mList = ["o", "P", "X", "^", "d", "p"]
+                    scatter_kws["marker"] = mList[loop_b]
+                if not "vmin" in kList:
+                    scatter_kws["vmin"] = np.min(c)
+                    if colorcode in ["VIS2", "VISAMP", "OI_VIS2:VIS2DATA", "OI_VIS:VISAMP"]:
+                        scatter_kws["vmin"] = np.max([scatter_kws["vmin"], 0])
+                if not "vmax" in kList:
+                    scatter_kws["vmax"] = np.max(c)
+                    if colorcode in ["VIS2", "VISAMP", "OI_VIS2:VIS2DATA", "OI_VIS:VISAMP"]:
+                        scatter_kws["vmax"] = np.min([scatter_kws["vmax"], 1])
+                if not "edgecolor" in kList:
+                    scatter_kws["edgecolor"] = "k"
+                if not "linewidth" in kList:
+                    scatter_kws["linewidth"] = 0.5
+            elif not "color" in kList:
+                scatter_kws["color"] = "C{0}".format(loop_b)
+            x = u[loop_b, :]
+            y = v[loop_b, :]
+            im = ax.scatter([-x, x], [-y, y], **scatter_kws)
+        alim = np.max([np.max(np.abs(u)), np.max(np.abs(v))]) * 1.1
+        ax.set_xlim([-alim, alim])
+        ax.set_ylim([-alim, alim])
+        ax.set_aspect('equal')
+        ax.set_xlabel(r"U (mas$^{-1}$)", fontsize=label_fontsize)
+        ax.set_ylabel(r"V (mas$^{-1}$)", fontsize=label_fontsize)
+        ax.minorticks_on()
+        ax.tick_params(axis='both', which='major', labelsize=tick_labelsize)
+        if (cb is None) & ("c" in scatter_kws.keys()):
+            divider = make_axes_locatable(ax)
+            cax = divider.append_axes("right", size="5%", pad=0.05)
+            cb = plt.colorbar(im, cax=cax)
+            cb.set_label(clabel, fontsize=label_fontsize)
+            cb.ax.minorticks_on()
+            cb.ax.tick_params(axis='both', which='major', labelsize=tick_labelsize)
+        #-> Legend
+        if not legend_kws is None:
+            if len(legend_kws.keys()) == 0:
+                ax.legend(loc="lower right", fontsize=text_fontsize, ncol=2, handletextpad=0.1,
+                          columnspacing=0.2)
+            else:
+                ax.legend(**legend_kws)
+        return (fig, ax, cb)
+
     def plot_visibility(self, insname="ft", visdata="vis2", FigAx=None, flagged=True,
                         errorbar_kws=None, legend_kws=None, ignored_channels=None,
                         label_fontsize=24, tick_labelsize=18, text_fontsize=16,
@@ -591,6 +775,14 @@ class GravityData(object):
         else:
             vis  = self.get_data(viskw, insname=insname, verbose=verbose)
             vise = self.get_data(visekw, insname=insname, verbose=verbose)
+        #--> Select channels
+        if not ignored_channels is None:
+            chnList = range(self.dims["CHANNEL_{0}".format(insname.upper())])
+            for cidx in ignored_channels:
+                chnList.remove(cidx)
+            ruv  = ruv[:, chnList]
+            vis  = vis[:, chnList]
+            vise = vise[:, chnList]
         #-> Plot
         if FigAx is None:
             fig = plt.figure(figsize=(7, 7))
@@ -611,17 +803,9 @@ class GravityData(object):
                 errorbar_kws["mec"] = errorbar_kws["color"]
             if not legend_kws is None:
                 errorbar_kws["label"] = "{0[0]}-{0[1]}".format(self.baseline_tn(loop_b))
-            if ignored_channels is None:
-                x = ruv[loop_b, :].flatten()
-                y = vis[loop_b, :].flatten()
-                e = vise[loop_b, :].flatten()
-            else:
-                chnList = range(self.dims["CHANNEL_{0}".format(insname.upper())])
-                for cidx in ignored_channels:
-                    chnList.remove(cidx)
-                x = ruv[loop_b, chnList].flatten()
-                y = vis[loop_b, chnList].flatten()
-                e = vise[loop_b, chnList].flatten()
+            x = ruv[loop_b, :].flatten()
+            y = vis[loop_b, :].flatten()
+            e = vise[loop_b, :].flatten()
             ax.errorbar(x, y, yerr=e, **errorbar_kws)
         ax.set_xlabel(r"$r_\mathrm{UV}$ (mas$^{-1})$", fontsize=label_fontsize)
         ax.set_ylabel(ylabel, fontsize=label_fontsize)
@@ -693,6 +877,14 @@ class GravityData(object):
         else:
             t3  = self.get_data(t3kw, insname=insname, verbose=verbose)
             t3e = self.get_data(t3ekw, insname=insname, verbose=verbose)
+        #--> Select channels
+        if not ignored_channels is None:
+            chnList = range(self.dims["CHANNEL_{0}".format(insname.upper())])
+            for cidx in ignored_channels:
+                chnList.remove(cidx)
+            ruv3 = ruv3[:, chnList]
+            t3   = t3[:, chnList]
+            t3e  = t3e[:, chnList]
         #-> Plot
         if FigAx is None:
             fig = plt.figure(figsize=(7, 7))
@@ -713,17 +905,9 @@ class GravityData(object):
                 errorbar_kws["mec"] = errorbar_kws["color"]
             if not legend_kws is None:
                 errorbar_kws["label"] = "{0[0]}-{0[1]}-{0[2]}".format(self.triangle_tn(loop_t))
-            if ignored_channels is None:
-                x = ruv3[loop_t, :].flatten()
-                y = t3[loop_t, :].flatten()
-                e = t3e[loop_t, :].flatten()
-            else:
-                chnList = range(self.dims["CHANNEL_{0}".format(insname.upper())])
-                for cidx in ignored_channels:
-                    chnList.remove(cidx)
-                x = ruv3[loop_t, chnList].flatten()
-                y = t3[loop_t, chnList].flatten()
-                e = t3e[loop_t, chnList].flatten()
+            x = ruv3[loop_t, :].flatten()
+            y = t3[loop_t, :].flatten()
+            e = t3e[loop_t, :].flatten()
             ax.errorbar(x, y, yerr=e, **errorbar_kws)
         ax.set_xlabel(r"$r_\mathrm{UV, max}$ (mas$^{-1})$", fontsize=label_fontsize)
         ax.set_ylabel(ylabel, fontsize=label_fontsize)
@@ -798,7 +982,7 @@ class GravityData(object):
         else:
             x = self.get_data(xdata, insname="ft", verbose=verbose)
             y = self.get_data(ydata, insname="ft", verbose=verbose)
-        # Ignore the side channels
+        #--> Select channels
         ndim = len(x.shape)
         if not ignored_channels is None:
             chnList = range(self.dims["CHANNEL_{0}".format(insname.upper())])
