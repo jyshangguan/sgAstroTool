@@ -47,7 +47,7 @@ class GravitySet(object):
 
     def plot_uv(self, insname="ft", FigAx=None, colorcode=None, scatter_kws=None,
                 legend_kws=None, ignored_channels=None, label_fontsize=24, tick_labelsize=18,
-                text_fontsize=16, verbose=False):
+                text_fontsize=16, show_colorbar=False, verbose=False):
         """
         Plot the UV coverage of the data.
 
@@ -73,6 +73,8 @@ class GravitySet(object):
             The fontsize of the ticklabel of both axes.
         text_fontsize : float, default: 16
             The fontsize of the text in the figure.
+        show_colorbar : bool, default: False
+            Show the colorbar when the color code is used, if True.
         verbose : bool, default: False
             Print auxiliary information if True.
 
@@ -94,7 +96,7 @@ class GravitySet(object):
                                        scatter_kws=deepcopy(scatter_kws), legend_kws=legend_kws,
                                        ignored_channels=ignored_channels, label_fontsize=label_fontsize,
                                        tick_labelsize=tick_labelsize, text_fontsize=text_fontsize,
-                                       verbose=verbose)
+                                       show_colorbar=show_colorbar, verbose=verbose)
         return FigAx
 
     def plot_visibility(self, insname="ft", visdata="vis2", FigAx=None, flagged=True,
@@ -142,11 +144,14 @@ class GravitySet(object):
         for loop in range(self.__length):
             if loop > 0:
                 legend_kws = None
-            self[loop].plot_visibility(insname=insname, visdata=visdata, FigAx=(fig, ax),
-                                       flagged=flagged, errorbar_kws=deepcopy(errorbar_kws),
-                                       legend_kws=legend_kws, ignored_channels=ignored_channels,
-                                       label_fontsize=label_fontsize, tick_labelsize=tick_labelsize,
-                                       text_fontsize=text_fontsize, verbose=verbose)
+            try:
+                self[loop].plot_visibility(insname=insname, visdata=visdata, FigAx=(fig, ax),
+                                           flagged=flagged, errorbar_kws=deepcopy(errorbar_kws),
+                                           legend_kws=legend_kws, ignored_channels=ignored_channels,
+                                           label_fontsize=label_fontsize, tick_labelsize=tick_labelsize,
+                                           text_fontsize=text_fontsize, verbose=verbose)
+            except:
+                print("Cannot plot: {0} data!".format(self[loop].obsdate))
         return (fig, ax)
 
     def plot_t3(self, insname="ft", t3data="phi", FigAx=None, flagged=True, errorbar_kws=None,
@@ -195,11 +200,14 @@ class GravitySet(object):
         for loop in range(self.__length):
             if loop > 0:
                 legend_kws = None
-            self[loop].plot_t3(insname=insname, t3data=t3data, FigAx=(fig, ax),
-                               flagged=flagged, errorbar_kws=deepcopy(errorbar_kws),
-                               legend_kws=legend_kws, ignored_channels=ignored_channels,
-                               label_fontsize=label_fontsize, tick_labelsize=tick_labelsize,
-                               text_fontsize=text_fontsize, verbose=verbose)
+            try:
+                self[loop].plot_t3(insname=insname, t3data=t3data, FigAx=(fig, ax),
+                                   flagged=flagged, errorbar_kws=deepcopy(errorbar_kws),
+                                   legend_kws=legend_kws, ignored_channels=ignored_channels,
+                                   label_fontsize=label_fontsize, tick_labelsize=tick_labelsize,
+                                   text_fontsize=text_fontsize, verbose=verbose)
+            except:
+                print("Cannot plot: {0} data!".format(self[loop].obsdate))
         return (fig, ax)
 
     def plot_strehl(self, visdata="vis2", channel=3, FigAx=None, errorbar_kws=None,
@@ -377,9 +385,8 @@ class GravitySet(object):
                     date_list = obsdate.split("T")[0].split("-")
                     #---> This is following the convention of the our team.
                     obsdate_s = "{0}-{1}-{2}T12:00:00".format(date_list[0], date_list[1], date_list[2])
-                    obsdate_e = "{0}-{1}-{2}T12:00:00".format(date_list[0], date_list[1], (eval(date_list[2])+1))
                     obsdate_s = datetime.datetime.strptime(obsdate_s, "%Y-%m-%dT%H:%M:%S")
-                    obsdate_e = datetime.datetime.strptime(obsdate_e, "%Y-%m-%dT%H:%M:%S")
+                    obsdate_e = obsdate_s + datetime.timedelta(days=1)
                     obsdate_inp = [obsdate_s, obsdate_e]
                     get_Data_func = self.get_Data_obsdate_range
                 except:
@@ -540,7 +547,7 @@ class GravityData(object):
         """
         #-> Prior properties
         self.__catglist_vis = ["SINGLE_SCI_VIS", "SINGLE_SCI_VIS_CALIBRATED", "SINGLE_CAL_VIS",
-                               "DUAL_SCI_VIS"]
+                               "DUAL_SCI_VIS", "DUAL_SCI_VIS_CALIBRATED"]
         self.__catglist_p2vmred = ["SINGLE_SCI_P2VMRED", "DUAL_SCI_P2VMRED", "SINGLE_CAL_P2VMRED"]
         self.dims = {
             "BASELINE": 6,
@@ -570,6 +577,9 @@ class GravityData(object):
         self.header = header
         #--> Basical information
         self.catg = header.get("HIERARCH ESO PRO CATG", None)
+        self.polamode = header.get("HIERARCH ESO INS POLA MODE", None)
+        if not self.polamode in ["COMBINED", "SPLIT"]:
+            raise ValueError("The polarization mode ({0}) is not recognized!".format(self.polamode))
         self.obsdate = datetime.datetime.strptime(header["DATE-OBS"], '%Y-%m-%dT%H:%M:%S')
         self.object = header["OBJECT"]
         self.ra=header['RA']
@@ -584,7 +594,7 @@ class GravityData(object):
 
     def plot_uv(self, insname="ft", colorcode=None, FigAx=None, scatter_kws=None,
                 legend_kws=None, ignored_channels=None, label_fontsize=24, tick_labelsize=18,
-                text_fontsize=16, verbose=False):
+                text_fontsize=16, show_colorbar=False, verbose=False):
         """
         Plot the UV coverage of the data.
 
@@ -610,6 +620,8 @@ class GravityData(object):
             The fontsize of the ticklabel of both axes.
         text_fontsize : float, default: 16
             The fontsize of the text in the figure.
+        show_colorbar : bool, default: False
+            Show the colorbar when the color code is used, if True.
         verbose : bool, default: False
             Print auxiliary information if True.
 
@@ -654,9 +666,13 @@ class GravityData(object):
             nfa = len(FigAx)
             if nfa == 2:
                 fig, ax = FigAx
-                cb = None
+                cax = None
+                cb  = None
             elif nfa == 3:
-                fig, ax, cb = FigAx
+                fig, ax, cax = FigAx
+                cb = None
+            elif nfa == 4:
+                fig, ax, cax, cb = FigAx
             else:
                 raise ValueError("The length of FigAx ({0}) is not correct!".format(nfa))
         if scatter_kws is None:
@@ -689,21 +705,20 @@ class GravityData(object):
             x = u[loop_b, :]
             y = v[loop_b, :]
             im = ax.scatter([-x, x], [-y, y], **scatter_kws)
-        alim = np.max([np.max(np.abs(u)), np.max(np.abs(v))]) * 1.1
-        ax.set_xlim([-alim, alim])
-        ax.set_ylim([-alim, alim])
         ax.set_aspect('equal')
         ax.set_xlabel(r"U (mas$^{-1}$)", fontsize=label_fontsize)
         ax.set_ylabel(r"V (mas$^{-1}$)", fontsize=label_fontsize)
         ax.minorticks_on()
         ax.tick_params(axis='both', which='major', labelsize=tick_labelsize)
-        if (cb is None) & ("c" in scatter_kws.keys()):
-            divider = make_axes_locatable(ax)
-            cax = divider.append_axes("right", size="5%", pad=0.05)
-            cb = plt.colorbar(im, cax=cax)
-            cb.set_label(clabel, fontsize=label_fontsize)
-            cb.ax.minorticks_on()
-            cb.ax.tick_params(axis='both', which='major', labelsize=tick_labelsize)
+        if show_colorbar & ("c" in scatter_kws.keys()):
+            if cax is None:
+                divider = make_axes_locatable(ax)
+                cax = divider.append_axes("right", size="5%", pad=0.05)
+            if cb is None:
+                cb = plt.colorbar(im, cax=cax)
+                cb.set_label(clabel, fontsize=label_fontsize)
+                cb.ax.minorticks_on()
+                cb.ax.tick_params(axis='both', which='major', labelsize=tick_labelsize)
         #-> Legend
         if not legend_kws is None:
             if len(legend_kws.keys()) == 0:
@@ -711,7 +726,11 @@ class GravityData(object):
                           columnspacing=0.2)
             else:
                 ax.legend(**legend_kws)
-        return (fig, ax, cb)
+        if show_colorbar:
+            FigAx = (fig, ax, cax, cb)
+        else:
+            FigAx = (fig, ax, im)
+        return FigAx
 
     def plot_visibility(self, insname="ft", visdata="vis2", FigAx=None, flagged=True,
                         errorbar_kws=None, legend_kws=None, ignored_channels=None,
@@ -1199,7 +1218,7 @@ class GravityData(object):
             for (idx1, idx2) in idxList:
                 si_list = [trg_list[idx1], trg_list[idx2]]
                 tn_list = self.list_tn(self.index_si(si_list)) # Get the name of the telescope pair
-                ruv_t.append(ruv_mas[self.index_baseline(tn_list)])
+                ruv_t.append(ruv_mas[self.index_baseline(tn_list), :])
             ruv_t = np.array(ruv_t)
             ruv3[loop_t, :] = np.max(ruv_t, axis=0)
         return ruv3
@@ -1444,11 +1463,11 @@ class GravityData(object):
             The index of the baseline dimension for the requested telescope pair.
         """
         assert len(tn_list) == 2
-        si_list = self.list_si(self.index_tn(tn_list))
+        si_list = np.sort(self.list_si(self.index_tn(tn_list)))
         bsl_index = None
         for loop_b in range(self.dims["BASELINE"]):
-            bsl_list = self.baseline_si(loop_b)
-            if (bsl_list[0] == np.max(si_list)) & (bsl_list[1] == np.min(si_list)):
+            bsl_list = np.sort(self.baseline_si(loop_b))
+            if (bsl_list == si_list).all():
                 bsl_index = loop_b
                 break
         if verbose & (bsl_index is None):
@@ -1472,12 +1491,11 @@ class GravityData(object):
             The index of the triangle dimension for the requested telescope triangle.
         """
         assert len(tn_list) == 3
-        si_list = self.list_si(self.index_tn(tn_list))
-        si_list = np.sort(si_list)[::-1] # The convention of GRAVITY
+        si_list = np.sort(self.list_si(self.index_tn(tn_list)))
         trg_index = None
         for loop_t in range(self.dims["TRIANGLE"]):
-            trg_list = self.triangle_si(loop_t)
-            if (trg_list[0] == si_list[0]) & (trg_list[1] == si_list[1]) & (trg_list[2] == si_list[2]):
+            trg_list = np.sort(self.triangle_si(loop_t))
+            if (trg_list == si_list).all():
                 trg_index = loop_t
                 break
         if verbose & (trg_index is None):
@@ -1697,7 +1715,7 @@ class GravityVis(object):
         """
         #-> Prior properties
         self.__catglist = ["SINGLE_SCI_VIS", "SINGLE_SCI_VIS_CALIBRATED", "SINGLE_CAL_VIS",
-                           "DUAL_SCI_VIS"]
+                           "DUAL_SCI_VIS", "DUAL_SCI_VIS_CALIBRATED"]
         self.dims = {
             "BASELINE": 6,
             "TELESCOPE": 4,
@@ -1730,6 +1748,9 @@ class GravityVis(object):
         self.catg = header.get("HIERARCH ESO PRO CATG", None)
         if verbose & (not self.catg in self.__catglist):
             print("The catg ({0}) has not been tested before!".format(self.catg))
+        self.polamode = header.get("HIERARCH ESO INS POLA MODE", None)
+        if not self.polamode in ["COMBINED", "SPLIT"]:
+            raise ValueError("The polarization mode ({0}) is not recognized!".format(self.polamode))
         self.obsdate = datetime.datetime.strptime(header["DATE-OBS"], "%Y-%m-%dT%H:%M:%S")
         self.object = header["OBJECT"]
         self.ra=header['RA']
@@ -1978,6 +1999,9 @@ class GravityP2VMRED(object):
         self.catg = header.get("HIERARCH ESO PRO CATG", None)
         if verbose & (not self.catg in self.__catglist):
             print("The catg ({0}) has not been tested before!".format(self.catg))
+        self.polamode = header.get("HIERARCH ESO INS POLA MODE", None)
+        if not self.polamode in ["COMBINED", "SPLIT"]:
+            raise ValueError("The polarization mode ({0}) is not recognized!".format(self.polamode))
         self.obsdate = datetime.datetime.strptime(header["DATE-OBS"], "%Y-%m-%dT%H:%M:%S")
         self.object = header["OBJECT"]
         self.ra=header['RA']
@@ -2024,8 +2048,10 @@ class GravityP2VMRED(object):
         hdulist = self.hdulist
         keyword = keyword.upper()
         insname = insname.upper()
-        if not ((insname == "FT") | (insname == "SC") | (insname == "AUX")):
-            errortext = "The insname ({0}) is incorrect!  It should be ft, sc, or aux, case free.".format(insname)
+        #if not ((insname == "FT") | (insname == "SC") | (insname == "AUX")):
+        if not insname in ["FT", "FT_P1", "FT_P2", "SC", "SC_P1", "SC_P2", "AUX"]:
+            errortext = "The insname ({0}) is incorrect!  It should be FT, FT_P1, "+\
+                        "FT_P2, SC, SC_P1, SC_P2, or AUX, case free.".format(insname)
             raise KeyError(errortext)
         insname = "GRAVITY_{0}".format(insname)
         extList = []
