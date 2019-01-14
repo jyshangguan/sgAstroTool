@@ -595,7 +595,8 @@ class GravityData(object):
         scatter_kws : dict (optional)
             The keywords for plt.scatter() function
         legend_kws : dict (optional)
-            The keywords for plt.legend() function
+            The keywords for the plt.legend() function.  The label of the plot will
+            not be provided if legend_kws is None.
         ignored_channels : list (optional)
             The list of channel indices (0~4 for FT and 0~209 for SC) ignored in
             the plot.
@@ -750,7 +751,8 @@ class GravityData(object):
         errorbar_kws : dict (optional)
             The keywords for plt.errorbar() function
         legend_kws : dict (optional)
-            The keywords for plt.legend() function
+            The keywords for the plt.legend() function.  The label of the plot will
+            not be provided if legend_kws is None.
         ignored_channels : list (optional)
             The list of channel indices (0~4 for FT and 0~209 for SC) ignored in
             the plot.
@@ -870,7 +872,8 @@ class GravityData(object):
         errorbar_kws : dict (optional)
             The keywords for plt.errorbar() function
         legend_kws : dict (optional)
-            The keywords for plt.legend() function
+            The keywords for the plt.legend() function.  The label of the plot will
+            not be provided if legend_kws is None.
         ignored_channels : list (optional)
             The list of channel indices (0~4 for FT and 0~209 for SC) ignored in
             the plot.
@@ -1001,7 +1004,8 @@ class GravityData(object):
         plot_kws : dict (optional)
             The keywords for the plt.plot() function.
         legend_kws : dict (optional)
-            The keywords for the plt.legend() function.
+            The keywords for the plt.legend() function.  The label of the plot will
+            not be provided if legend_kws is None.
         label_fontsize : float, default: 24
             The fontsize of the labels of both axes.
         tick_labelsize : float, default: 18
