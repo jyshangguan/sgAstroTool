@@ -44,7 +44,7 @@ class GravitySet(object):
         Parameters
         ----------
         insname : string
-            The instrument name, "ft" or "sc".
+            The instrument name, "ft", "sc", or their polarization components.
         colorcode : string (optional)
             The keyword of the data used for the color code, vis2 or visamp, or
             other keywords.  The data should have the same shape as the uv coordinates.
@@ -99,7 +99,7 @@ class GravitySet(object):
         Parameters
         ----------
         insname : string
-            The instrument name, "ft" or "sc".
+            The instrument name, "ft", "sc", or their polarization components.
         visdata : string
             The visibility data, vis2, visamp, or visphi.
         FigAx : tuple (optional)
@@ -153,7 +153,7 @@ class GravitySet(object):
         Parameters
         ----------
         insname : string
-            The instrument name, "ft" or "sc".
+            The instrument name, "ft", "sc", or their polarization components.
         visdata : string
             The visibility data, vis2, visamp, or visphi.
         FigAx : tuple (optional)
@@ -586,7 +586,7 @@ class GravityData(object):
         Parameters
         ----------
         insname : string
-            The instrument name, "ft" or "sc".
+            The instrument name, "ft", "sc", or their polarization components.
         colorcode : string (optional)
             The keyword of the data used for the color code, vis2 or visamp, or
             other keywords.  The data should have the same shape as the uv coordinates.
@@ -741,7 +741,7 @@ class GravityData(object):
         Parameters
         ----------
         insname : string
-            The instrument name, "ft" or "sc".
+            The instrument name, "ft", "sc", or their polarization components.
         visdata : string
             The visibility data, vis2, visamp, or visphi.
         FigAx : tuple (optional)
@@ -862,7 +862,7 @@ class GravityData(object):
         Parameters
         ----------
         insname : string
-            The instrument name, "ft" or "sc".
+            The instrument name, "ft", "sc", or their polarization components.
         visdata : string
             The visibility data, vis2, visamp, or visphi.
         FigAx : tuple (optional)
@@ -979,7 +979,7 @@ class GravityData(object):
         Parameters
         ----------
         insname : string
-            The instrument name, "ft" or "sc".
+            The instrument name, "ft", "sc", or their polarization components.
         xdata : string, default: "oi_vis:gdelay"
             The data on the x axis.
         ydata : string, default: "oi_vis:f1f2"
@@ -1199,7 +1199,7 @@ class GravityData(object):
         Parameters
         ----------
         insname : string
-            The instrument name, "ft" for fringe tracking or "sc" for science.
+            The instrument name, "ft", "sc", or their polarization components.
         unit_read : string, default: us
             The unit of the read-in data.  The default value of GRAVITY data is
             microsecond.
@@ -1225,7 +1225,7 @@ class GravityData(object):
         Parameters
         ----------
         insname : string
-            The instrument name, "ft" for fringe tracking or "sc" for science.
+            The instrument name, "ft", "sc", or their polarization components.
         unit_read : string, default: us
             The unit of the read-in data.  The default value of GRAVITY data is
             microsecond.
@@ -1251,7 +1251,7 @@ class GravityData(object):
         Parameters
         ----------
         insname : string
-            The instrument name, "ft" for fringe tracking or "sc" for science.
+            The instrument name, "ft", "sc", or their polarization components.
         verbose : bool
             Print more information if True.
 
@@ -1284,7 +1284,7 @@ class GravityData(object):
         Parameters
         ----------
         insname : string
-            The instrument name, "ft" for fringe tracking or "sc" for science.
+            The instrument name, "ft", "sc", or their polarization components.
         verbose : bool
             Print more information if True.
 
@@ -1304,7 +1304,7 @@ class GravityData(object):
         Parameters
         ----------
         insname : string
-            The instrument name, "ft" for fringe tracking or "sc" for science.
+            The instrument name, "ft", "sc", or their polarization components.
         verbose : bool
             Print more information if True.
 
@@ -1601,8 +1601,9 @@ class GravityData(object):
         keyword : string
             The keyword of the extension, e.g., "OI_VIS", case free.
         insname : string
-            The instrument name, "ft" for fringe tracking, "sc" for science, or
-            "aux" for auxiliary data without INSNAME keyword.
+            The instrument name, "ft" for fringe tracking, "sc" for science (or
+            their polarization mode), or "aux" for auxiliary data without INSNAME
+            keyword.
         multiple : bool
             Allow the output list to have more than one extensions, if True.
         verbose : bool
@@ -1627,8 +1628,9 @@ class GravityData(object):
             The keyword of the data, "extName:datName", e.g., "OI_VIS:VISDATA".
             The keyword is case free.
         insname : string
-            The instrument name, "ft" for fringe tracking, "sc" for science, or
-            "aux" for auxiliary data without INSNAME keyword.
+            The instrument name, "ft" for fringe tracking, "sc" for science (or
+            their polarization mode), or "aux" for auxiliary data without INSNAME
+            keyword.
         verbose : bool
             Print more information if True.
 
@@ -1650,7 +1652,7 @@ class GravityData(object):
             The keyword of the data, "extName:datName", e.g., "OI_VIS:VISDATA".
             The keyword is case free.
         insname : string
-            The instrument name, "ft" for fringe tracking or "sc" for science.
+            The instrument name, "ft", "sc", or their polarization components.
         verbose : bool
             Print more information if True.
 
@@ -1675,7 +1677,7 @@ class GravityData(object):
             The specified mask.  If None, the "REJECTION_FLAG" will be used to
             flag the data.
         insname : string
-            The instrument name, "ft" for fringe tracking or "sc" for science.
+            The instrument name, "ft", "sc", or their polarization components.
         verbose : bool
             Print more information if True.
 
@@ -1727,8 +1729,9 @@ class GravityData(object):
         newdata : array
             The new data to be used.
         insname : string
-            The instrument name, "ft" for fringe tracking, "sc" for science, or
-            "aux" for auxiliary data without INSNAME keyword.
+            The instrument name, "ft" for fringe tracking, "sc" for science (or
+            their polarization mode), or "aux" for auxiliary data without INSNAME
+            keyword.
         verbose : bool
             Print more information if True.
         """
@@ -1851,8 +1854,9 @@ class GravityVis(object):
         keyword : string
             The keyword of the extension, e.g., "OI_VIS", case free.
         insname : string
-            The instrument name, "ft" for fringe tracking, "sc" for science, or
-            "aux" for auxiliary data without INSNAME keyword.
+            The instrument name, "ft" for fringe tracking, "sc" for science (or
+            their polarization mode), or "aux" for auxiliary data without INSNAME
+            keyword.
         multiple : bool
             Allow the output list to have more than one extensions, if True.
         verbose : bool
@@ -1892,8 +1896,9 @@ class GravityVis(object):
             The keyword of the data, "extName:datName", e.g., "OI_VIS:VISDATA".
             The keyword is case free.
         insname : string
-            The instrument name, "ft" for fringe tracking, "sc" for science, or
-            "aux" for auxiliary data without INSNAME keyword.
+            The instrument name, "ft" for fringe tracking, "sc" for science (or
+            their polarization mode), or "aux" for auxiliary data without INSNAME
+            keyword.
         verbose : bool
             Print more information if True.
 
@@ -1924,7 +1929,7 @@ class GravityVis(object):
             The keyword of the data, "extName:datName", e.g., "OI_VIS:VISDATA".
             The keyword is case free.
         insname : string
-            The instrument name, "ft" for fringe tracking or "sc" for science.
+            The instrument name, "ft", "sc", or their polarization components.
         verbose : bool
             Print more information if True.
 
@@ -1978,7 +1983,7 @@ class GravityVis(object):
             The specified mask.  If None, the "REJECTION_FLAG" will be used to
             flag the data.
         insname : string
-            The instrument name, "ft" for fringe tracking or "sc" for science.
+            The instrument name, "ft", "sc", or their polarization components.
         verbose : bool
             Print more information if True.
 
@@ -2183,7 +2188,7 @@ class GravityP2VMRED(object):
             The keyword of the data, "extName:datName", e.g., "OI_VIS:VISDATA".
             The keyword is case free.
         insname : string
-            The instrument name, "ft" for fringe tracking or "sc" for science.
+            The instrument name, "ft", "sc", or their polarization components.
         verbose : bool
             Print more information if True.
 
@@ -2237,7 +2242,7 @@ class GravityP2VMRED(object):
             The specified mask.  If None, the "REJECTION_FLAG" will be used to
             flag the data.
         insname : string
-            The instrument name, "ft" for fringe tracking or "sc" for science.
+            The instrument name, "ft", "sc", or their polarization components.
         verbose : bool
             Print more information if True.
 
