@@ -258,9 +258,9 @@ class GravitySet(object):
             errorbar_kws["marker"] = "."
         if not (("ls" in kList) or ("linestyle" in kList)):
             errorbar_kws["ls"] = "none"
-        nbaseline = self.get_dimlen("BASELINE")
         flag = 0
         for gd in self.gd_list:
+            nbaseline = gd.get_dimlen("BASELINE")
             for bsl in range(nbaseline):
                 bsl_tn = gd.baseline_tn(bsl)
                 bsl_idx = gd.index_tn(bsl_tn)
@@ -576,6 +576,75 @@ class GravityData(object):
             self.data = GravityP2VMRED(hdulist, verbose=verbose)
         else:
             raise ValueError("The catg ({0}) is not supported!".format(self.catg))
+
+    def plot_p2vmred_variability(self, insname="ft", time_interval=100, baseline=0, channel=2):
+        """
+        Plot the time variability of the P2VMRED data.
+
+        Parameters
+        ----------
+        insname : string
+            The instrument name, "ft", "sc", or their polarization components.
+        time_interval : int, default: 100
+            The interval to skip when plottinng the time series.
+        baseline : int, default: 0
+            The index of baseline dimension, 0~5 for Gravity data.
+        channel : int, default: 2
+            The index of channel dimension, 0~4 for Gravity data.
+
+        Returns
+        -------
+        The Figure object and the list of four Axes objects.
+        """
+        assert insname.upper() in self.__inslist
+        if (self.polamode == "SPLIT") & (insname in ["FT", "SC"]):
+            raise KeyError("Only plot one polarization mode at a time!")
+        time = self.get_data("oi_vis:time", insname=insname)
+        gdly = self.get_data("oi_vis:gdelay", insname=insname) * 1e6
+        gdlyb = self.get_data("oi_vis:gdelay_boot", insname=insname) * 1e6
+        f1f2 = self.get_data("oi_vis:f1f2", insname=insname)
+        snr = self.get_data("oi_vis:snr", insname=insname)
+        snrb = self.get_data("oi_vis:snr_boot", insname=insname)
+        visdata = self.get_data("oi_vis:visdata", insname=insname)
+        visf1f2 = self.get_data("oi_vis:f1f2", insname=insname)
+        visp2vm = (np.absolute(visdata)/np.sqrt(visf1f2))
+        #-> Plot the data
+        fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, sharex=True) #plt.figure(figsize=(10, 3))
+        fig.set_size_inches(16, 16)
+        #--> Visamp
+        x = time[::time_interval, baseline]
+        y = visp2vm[::time_interval, baseline, channel]
+        ax1.plot(x, y, ls="none", marker=".", color="k")
+        ax1.set_ylabel("Vis. Amp.", fontsize=24)
+        ax1.minorticks_on()
+        ax1.tick_params(axis='both', which='major', labelsize=18)
+        #--> GDELAY
+        y = gdly[::time_interval, baseline]
+        ax2.plot(x, y, ls="-", color="r", label="GDELAY")
+        y = gdlyb[::time_interval, baseline]
+        ax2.plot(x, y, ls="-", color="b", label="GDELAY_BOOT")
+        ax2.set_ylabel(r"GDELAY ($\mu$m)", fontsize=24)
+        ax2.legend(loc="upper left", fontsize=14)
+        ax2.minorticks_on()
+        ax2.tick_params(axis='both', which='major', labelsize=18)
+        #--> F1F2
+        y = f1f2[::time_interval, baseline, channel]
+        ax3.plot(x, y, ls="-", color="r")
+        ax3.set_ylabel("F1F2", fontsize=24)
+        ax3.minorticks_on()
+        ax3.tick_params(axis='both', which='major', labelsize=18)
+        #--> SNR
+        y = snr[::time_interval, baseline]
+        ax4.plot(x, y, ls="-", color="r", label="SNR")
+        y = snrb[::time_interval, baseline]
+        ax4.plot(x, y, ls="-", color="b", label="SNR_BOOT")
+        ax4.set_ylabel("SNR", fontsize=24)
+        ax4.legend(loc="upper left", fontsize=14)
+        ax4.minorticks_on()
+        ax4.tick_params(axis='both', which='major', labelsize=18)
+        ax4.set_xlabel("Time", fontsize=24)
+        plt.subplots_adjust(hspace=0)
+        return (fig, [ax1, ax2, ax3, ax4])
 
     def plot_uv(self, insname="ft", colorcode=None, FigAx=None, scatter_kws=None,
                 legend_kws=None, ignored_channels=None, label_fontsize=24, tick_labelsize=18,
@@ -1767,6 +1836,31 @@ class GravityData(object):
             The keyword of the data dimension.
         """
         return gravity_DimLen(keyword, self.specres)
+
+    def get_header(self, keyword, insname="aux", match=False, verbose=True):
+        """
+        Search the keyword in the header.
+        """
+        keyword = keyword.upper()
+        if ":" in keyword:
+            keyword = keyword.upper()
+            extName, datName = keyword.split(":")
+        else:
+            extName, datName = ["PRIMARY", keyword]
+        hduList = self.get_extension(extName, insname=insname, multiple=True, verbose=verbose)
+        header_dict = {}
+        #-> Go through all the hdu
+        for hdu in hduList:
+            header = hdu.header
+            #-> Search for the keywords in the header
+            for hk in header.keys():
+                if match:
+                    selc = datName == hk
+                else:
+                    selc = datName in hk
+                if selc:
+                    header_dict[hk] = header[hk]
+        return header_dict
 
 
 class GravityVis(object):
