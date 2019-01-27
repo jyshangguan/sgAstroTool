@@ -106,7 +106,8 @@ def lineParameters(func, fit_result, perc=20, tol=0.01, resolution=10, verbose=F
     return parDict
 
 from HI_CoGv5 import Spectra
-def linewidth_nky(velocity, flux, resolution, scale=5, get_error=False, nmc=100):
+def linewidth_nky(velocity, flux, resolution, scale=5, get_error=False, nmc=100,
+                  nidx=None, **der_cg_kws):
     """
     Calculate the linewidth using Niankun's Curve of Growth method.
 
@@ -124,6 +125,9 @@ def linewidth_nky(velocity, flux, resolution, scale=5, get_error=False, nmc=100)
         Calculate the error if True.
     nmc : int
         The number of Monte Carlo steps to calculate the error.
+    nidx : int
+        Number of consecutive points to recognize the start and end points of
+        the emission line.
 
     Returns
     -------
@@ -132,10 +136,10 @@ def linewidth_nky(velocity, flux, resolution, scale=5, get_error=False, nmc=100)
     """
     sp = Spectra(velocity, flux, resolution)
     sigma, f_mean = sp.get_sigma()
-    Vc, start_channel, end_channel = sp.get_startEndVc(resolution, scale, nidx=None)
-    result = sp.GrowthCurve(res=resolution)
+    Vc, start_channel, end_channel = sp.get_startEndVc(resolution, scale, nidx=nidx)
+    result = sp.GrowthCurve(res=resolution, **der_cg_kws)
     if get_error:
-        error = sp.GrowthCurveE(res=resolution, n_times=nmc)
+        error = sp.GrowthCurveE(res=resolution, n_times=nmc, **der_cg_kws)
         for kw in error.keys():
             result[kw] = error[kw]
     return result
