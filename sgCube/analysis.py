@@ -463,6 +463,31 @@ def GaussHermite(cube, mask, line_velrange=None, fit_velrange=None, p0_dict={},
                  use_mommaps=None, verbose=False):
     """
     Calculate the map of Gauss-Hermite velocity fields.
+
+    Parameters
+    ----------
+    cube : SpectralCube
+        The data cube to extract the spectrum.
+    mask : array_like
+        The masked pixels are used to perform the spectral fitting.
+    line_velrange : list (optional)
+        The start and end velocity of the spectral line, used to find the line-free
+        channels to estimate the noise and baseline.
+    fit_velrange : list (optional)
+        The velocity range of the spectral used in the fitting.
+    p0_dict : dict
+        The dict of the initial guess of "a", "b", "c", "h3", and "h4".
+    use_mommaps : list (optional)
+        The list of moment 1 and moment 2 maps.  If provided, the initial guesses
+        of "b" and "c" will be from moment 1 and 2 maps, unless nan is provided.
+    verbose : bool
+        Print auxiliary information, if True.
+
+    Returns
+    -------
+    mapDict : dict
+        The dict of the fitting results.  The maps of "a", "b", "c", "h3", and
+        "h4" are provided.
     """
     #-> Prepare the fitting
     if line_velrange is None:
