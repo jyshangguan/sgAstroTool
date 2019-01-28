@@ -129,7 +129,7 @@ class SpectraFitter(object):
         self.ndim = ndim
         pos = [np.array(p0) + 1e-4*np.random.randn(ndim) for i in range(nwalkers)]
         sampler = emcee.EnsembleSampler(nwalkers, ndim, self.lnprob)
-        sampler.run_mcmc(pos, 400)
+        sampler.run_mcmc(pos, steps)
         self.sampler = sampler
         return sampler
 
