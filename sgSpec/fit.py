@@ -2,6 +2,7 @@ import numpy as np
 from gaussian import *
 from scipy.optimize import curve_fit
 import emcee
+import corner
 
 __all__ = ["Fit_Double_Gaussian", "Fit_Gaussian_DoublePeak", "SpectraFitter"]
 
@@ -140,14 +141,52 @@ class SpectraFitter(object):
         samples = self.sampler.chain[:, burnin:, :].reshape((-1, self.ndim))
         return samples
 
-    def get_bestfit(self, burnin):
+    def get_bestfit(self, burnin, percList=None, qfunction=None, qf_args=[]):
         """
         Get the best-fit results.
+
+        Parameters
+        ----------
+        burnin : float
+            The lenght of the burnin chain.
+        percList : list
+            The lower, median, and upper percentiles to calculate the best fit and
+            uncertainties.
+        qfunction : function (optional)
+            The function to calculate the best-fit quanties and the errors based
+            on the mcmc sampled parameters.  Usage:
+                qfunction(samples, *qf_args)
+        qf_args : list
+            The additional arguments of qfunction.
+
+        Returns
+        -------
+        If quant_expr is not provided, it returns the best-fit parameters of the
+        model, list of tuples of (median, upper error, lower error).
+
+        Otherwise, it calculates the requested quanty based on the mcmc samples,
+        and returns the tuple of (median, upper error, lower error) from the mcmc
+        samples.
         """
         samples = self.get_samples(burnin)
-        results = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]),
-                      zip(*np.percentile(samples, [16, 50, 84], axis=0)))
+        if percList is None:
+            percList = [16, 50, 84]
+        if qfunction is None:
+            results = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]),
+                          zip(*np.percentile(samples, percList, axis=0)))
+        else:
+            quant = qfunction(samples, *qf_args)
+            v = np.percentile(quant, percList)
+            results = (v[1], v[2]-v[1], v[1]-v[0])
         return results
+
+    def plot_corner(self, burnin, **kwargs):
+        """
+        Generate the corner plot.
+        """
+        samples = self.get_samples(burnin)
+        fig = corner.corner(samples, **kwargs)
+        return fig
 
     def get_sampler(self):
         """
@@ -155,15 +194,30 @@ class SpectraFitter(object):
         """
         return self.sampler
 
+    def chisq(self, theta):
+        """
+        Calculate the chi square.
+        """
+        m = self.function(self.x, *theta)
+        csq = np.sum( ((self.y - m)/self.yerr)**2. )
+        return csq
+
+    def chisq_rd(self, theta):
+        """
+        Calculate the reduced chi square.
+        """
+        dof = len(self.x) - len(theta)
+        csq_rd = self.chisq(theta) / dof
+        return csq_rd
+
     def lnlike(self, theta):
         """
         Likelihood function.
         """
-        if theta is None:
-            raise ValueError("The parameter is not asigned!")
-        m = self.function(self.x, *theta)
-        chisq = np.sum( ((self.y - m)/self.yerr)**2. )
-        return -0.5 * chisq
+        #m = self.function(self.x, *theta)
+        #chisq = np.sum( ((self.y - m)/self.yerr)**2. )
+        lnl = -0.5 * self.chisq(theta)
+        return lnl
 
     def lnprior(self, theta):
         """

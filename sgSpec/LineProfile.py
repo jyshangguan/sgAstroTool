@@ -1,9 +1,33 @@
 import numpy as np
 from scipy.optimize import minimize, brentq
 
-__all__ = ["lineParameters", "linewidth_nky"]
+__all__ = ["lineParameters", "linewidth_nky", "q2InclinationAngle"]
 
-def lineParameters(func, fit_result, perc=20, tol=0.01, resolution=10, verbose=False):
+def q2InclinationAngle(q, q0=0.2):
+    """
+    Calculate the inclination angle from the axis ratio.
+
+    Parameters
+    ----------
+    q : array like
+        The axis ratio, b/a.
+    q0 : float
+        The intrinsic axis ratio when the galaxy is edge-on.
+
+    Returns
+    -------
+    i : array like
+        The inclination angle, units: radian.
+
+    Notes
+    -----
+    The equation is from Topal et al. (2018MNRAS.479.3319T), equation (1).
+    """
+    i = np.arccos(np.sqrt( (q**2 - q0**2) / (1.0 - q0**2) ))
+    return i
+
+def lineParameters(func, fit_result, xp0_list, perc=20, tol=0.01, resolution=10,
+                   verbose=False):
     """
     Convert the best-fit results to the line parameters.
 
@@ -16,12 +40,17 @@ def lineParameters(func, fit_result, perc=20, tol=0.01, resolution=10, verbose=F
             The x axis of the spectrum.
         popt : Table
             The best fit parameters of the function.
+    xp0_list : list
+        The list of initial guess of the left and right peak of the line profile,
+        order sensitive, i.e., [xp0_left, xp0_right].
     perc : float, default: 20
-        The percent of the line peak at which we calculate the line width and the line center.
+        The percent of the line peak at which we calculate the line width and the
+        line center.
     tol : float, (0, 1), default: 0.01
         The tolerance level for our calculations and sanity checks.
     resolution : float, default: 10
-        The number of times to enhance the resolution of the model spectrum comparing to the data.
+        The number of times to enhance the resolution of the model spectrum comparing
+        to the data.
     verbose : bool, default: False
         If true, raise the warnings.
 
@@ -53,13 +82,13 @@ def lineParameters(func, fit_result, perc=20, tol=0.01, resolution=10, verbose=F
     fprf = func(x, *popt)
     #-> Find the location of the peaks
     yfunc = lambda x, p: -1. * func(x, *p)
-    xp10 = popt[1]
+    xp10 = xp0_list[0] #popt[1]
     try:
         xp1 = minimize(yfunc, xp10, args=(popt,)).x[0]
     except:
         raise RuntimeError("Fail to locate the left peak!")
     yp1 = -1. * yfunc(xp1, popt)
-    xp20 = popt[4]
+    xp20 = xp0_list[1] #popt[4]
     try:
         xp2 = minimize(yfunc, xp20, args=(popt,)).x[0]
     except:
@@ -137,9 +166,9 @@ def linewidth_nky(velocity, flux, resolution, scale=5, get_error=False, nmc=100,
     sp = Spectra(velocity, flux, resolution)
     sigma, f_mean = sp.get_sigma()
     Vc, start_channel, end_channel = sp.get_startEndVc(resolution, scale, nidx=nidx)
-    result = sp.GrowthCurve(res=resolution, **der_cg_kws)
+    result = sp.GrowthCurve(res=resolution, nidx=nidx, **der_cg_kws)
     if get_error:
-        error = sp.GrowthCurveE(res=resolution, n_times=nmc, **der_cg_kws)
+        error = sp.GrowthCurveE(res=resolution, n_times=nmc, nidx=nidx, **der_cg_kws)
         for kw in error.keys():
             result[kw] = error[kw]
     return result
