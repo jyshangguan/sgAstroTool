@@ -1,30 +1,7 @@
 import numpy as np
 from scipy.optimize import minimize, brentq
 
-__all__ = ["lineParameters", "linewidth_nky", "q2InclinationAngle"]
-
-def q2InclinationAngle(q, q0=0.2):
-    """
-    Calculate the inclination angle from the axis ratio.
-
-    Parameters
-    ----------
-    q : array like
-        The axis ratio, b/a.
-    q0 : float
-        The intrinsic axis ratio when the galaxy is edge-on.
-
-    Returns
-    -------
-    i : array like
-        The inclination angle, units: radian.
-
-    Notes
-    -----
-    The equation is from Topal et al. (2018MNRAS.479.3319T), equation (1).
-    """
-    i = np.arccos(np.sqrt( (q**2 - q0**2) / (1.0 - q0**2) ))
-    return i
+__all__ = ["lineParameters", "linewidth_nky"]
 
 def lineParameters(func, fit_result, xp0_list, perc=20, tol=0.01, resolution=10,
                    verbose=False):
