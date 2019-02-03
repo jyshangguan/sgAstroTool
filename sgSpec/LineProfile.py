@@ -56,6 +56,7 @@ def lineParameters(func, fit_result, xp0_list, perc=20, tol=0.01, resolution=10,
     """
     x, popt = fit_result
     x = np.linspace(x[0], x[-1], len(x)*resolution)
+    deltX = np.abs(x[1] - x[0]) # Spectral resolution
     fprf = func(x, *popt)
     #-> Find the location of the peaks
     yfunc = lambda x, p: -1. * func(x, *p)
@@ -72,13 +73,13 @@ def lineParameters(func, fit_result, xp0_list, perc=20, tol=0.01, resolution=10,
         raise RuntimeError("Fail to locate the left peak!")
     yp2 = -1. * yfunc(xp2, popt)
     #-> Calculate the peak flux
-    assert xp1 <= xp2
+    if (xp1 - xp2) > 1.5 * deltX: # Check the position of the peaks.
+        raise ValueError("The left peak ({0}) is on the right of the right peak ({1}).".format(xp1, xp2))
     xpList = [xp1, xp2]
     ypList = [yp1, yp2]
     xmax   = xpList[np.argmax(ypList)]
     ymax   = np.max(ypList)
     #-> Find the left and right perc%-maximum channels
-    deltX = np.abs(x[1] - x[0])
     yperc = ymax * perc / 100.
     yfunc = lambda x, p: func(x, *p) -  yperc
     #--> Left channel

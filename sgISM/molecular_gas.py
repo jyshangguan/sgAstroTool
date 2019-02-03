@@ -3,7 +3,8 @@ __all__ = ["coLuminosity", "Lco2MH2"]
 
 def coLuminosity(Ico, nu_rest, DL, z):
     """
-    Calculate the line luminosity of CO.
+    Calculate the line luminosity of CO, based on Equation (3) of 
+    Solomon & Vanden Bout (2005).
     
     Parameters
     ----------

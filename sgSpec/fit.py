@@ -141,7 +141,7 @@ class SpectraFitter(object):
         samples = self.sampler.chain[:, burnin:, :].reshape((-1, self.ndim))
         return samples
 
-    def get_bestfit(self, burnin, percList=None, qfunction=None, qf_args=[]):
+    def get_bestfit(self, burnin, percList=None, nsample=None, qfunction=None, qf_args=[]):
         """
         Get the best-fit results.
 
@@ -152,6 +152,10 @@ class SpectraFitter(object):
         percList : list
             The lower, median, and upper percentiles to calculate the best fit and
             uncertainties.
+        nsample : int (optional)
+            The number of sampled parameters that are randomly selected to calculate
+            the best-fit values.  By default, all of the mcmc samples, besides the
+            burnin chains, are used.
         qfunction : function (optional)
             The function to calculate the best-fit quanties and the errors based
             on the mcmc sampled parameters.  Usage:
@@ -169,15 +173,26 @@ class SpectraFitter(object):
         samples.
         """
         samples = self.get_samples(burnin)
+        lsample = samples.shape[0]
+        if nsample is None:
+            nsample = lsample # Use all of the samples
+        sList = []
+        for idx in np.random.randint(0, lsample, nsample):
+            sList.append(samples[idx, :])
+        sList = np.array(sList)
         if percList is None:
             percList = [16, 50, 84]
         if qfunction is None:
-            results = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]),
-                          zip(*np.percentile(samples, percList, axis=0)))
+            v = np.percentile(sList, percList, axis=0)
+            results = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]), zip(*v))
         else:
-            quant = qfunction(samples, *qf_args)
-            v = np.percentile(quant, percList)
-            results = (v[1], v[2]-v[1], v[1]-v[0])
+            quant = np.array(qfunction(sList, *qf_args))
+            if len(quant.shape) == 1:
+                v = np.percentile(quant, percList)
+                results = (v[1], v[2]-v[1], v[1]-v[0])
+            else:
+                v = np.percentile(quant, percList, axis=0)
+                results = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]), zip(*v))
         return results
 
     def plot_corner(self, burnin, **kwargs):
