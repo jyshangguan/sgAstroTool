@@ -312,7 +312,7 @@ class GravitySet(object):
         Returns
         -------
         fig : Figure object
-        ax : array of Axes objects
+        axs : array of Axes objects
         """
         ndat = self.__length
         nrow = np.ceil(np.sqrt(ndat))
