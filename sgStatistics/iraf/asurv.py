@@ -42,7 +42,7 @@ def kmestimate(censors, values, kme_data="tmp_kme_data.dat", kme_output="tmp_kme
     Parameters
     ----------
     censors : array like
-        The list of censors, 0 for detection and -1 for upper limit.
+        The list of censors, 0 for detection, 1 for lower limit, and -1 for upper limit.
     values : array like
         The list of values to calculate the distribution.
     kme_data : string, default: "tmp_kme_data.dat"
@@ -62,7 +62,7 @@ def kmestimate(censors, values, kme_data="tmp_kme_data.dat", kme_output="tmp_kme
         Non-detection : float
             The number of non-detection data.
         Percentile : list or None
-            The 75th, 50th, 25th percentile of the distribution. None, if the
+            The 25th, 50th, 75th percentile of the distribution. None, if the
             function goes wrong.
         Mean : list or None
             The mean and its uncertainty of the distribution. None, if the function
@@ -70,7 +70,8 @@ def kmestimate(censors, values, kme_data="tmp_kme_data.dat", kme_output="tmp_kme
 
     Notes
     -----
-    None.
+    The the convention of "percentile" for kmestimate is on the contrary of our common 
+    definition.  As explained above, the returned percentiles are from low to high.
     """
     censors = np.atleast_1d(censors)
     values = np.atleast_1d(values)
@@ -82,9 +83,11 @@ def kmestimate(censors, values, kme_data="tmp_kme_data.dat", kme_output="tmp_kme
         fltr_nonnan = np.logical_not(fltr_nan)
         censors = censors[fltr_nonnan]
         values  = values[fltr_nonnan]
-    flag_censor = censors == -1
-    nNond = np.sum(flag_censor)
-    nDetc = len(flag_censor) - nNond
+    flag_up = censors == -1 # Upper limits
+    flag_lo = censors == 1  # Lower limits
+    nUpper = np.sum(flag_up)
+    nLower = np.sum(flag_lo)
+    nDetc = len(censors) - nUpper - nLower
     data = np.transpose( np.array([censors, values]) )
     np.savetxt(kme_data, data, delimiter=" ", fmt=["%d", "%.4f"])
     if os.path.isfile(kme_output):
@@ -122,7 +125,8 @@ def kmestimate(censors, values, kme_data="tmp_kme_data.dat", kme_output="tmp_kme
         result_mean = [float(r_mean[0]), float(r_mean[1])]
     result = {
         "Detections": nDetc,
-        "Non-detection": nNond,
+        "UpperLimits": nUpper,
+        "LowerLimits": nLower,
         "Percentile": result_perc,
         "Mean": result_mean
     }
@@ -264,11 +268,29 @@ def bhkmethod(censor, value1, value2, bhk_data="tmp_bhk_data.dat",
     censor : array like
         The list of censors, 0 for detections; negative values for upper limits,
         and positive for lower limits; 1, 2, 3, and 4 for X, Y, Both, and Mix.
-        (I am not sure what Mix is for...)
+                                          
+        Censoring  can  be  categorized  in  three  groups: detection, upper
+        limit, and lower limit. In general, if the data point  is  detected,
+        the  indicator  is  zero;  for an upper limit, the indicator will be
+        less than zero; and  for  a  lower  limit,  the  indicator  will  be
+        greater  than  zero.   The following table gives possible values and
+        their meaning:
+
+           Indicator          Independent variable   Dependent variable
+              0                   detection              detection
+              1                   detection             lower limit
+             -1                   detection             upper limit
+              2                  lower limit             detection
+             -2                  upper limit             detection
+              3                  lower limit            lower limit
+             -3                  upper limit            upper limit
+              4                  upper limit            lower limit
+             -4                  lower limit            upper limit
+
     value1 : array like
-        The list of values to calculate the correlation.
+        The list of independent variable to calculate the correlation.
     value2 : array like
-        The list of values to calculate the correlation.
+        The list of dependent variable to calculate the correlation.
     bhk_data : string, default: "tmp_bhk_data.dat"
         The file to save the data file for the iraf.bhkmethod task.
     bhk_output : string, default: "tmp_bhk_output.dat"
@@ -280,7 +302,7 @@ def bhkmethod(censor, value1, value2, bhk_data="tmp_bhk_data.dat",
     -------
     results : dict
         The Kendall's tau, Z-value, and the probability of the null hypothesis
-        that the two quantities are correlated.
+        that the two quantities are not correlated.
         Keywords: "tau", "z-value", "Probability"
 
     Notes
@@ -300,14 +322,14 @@ def bhkmethod(censor, value1, value2, bhk_data="tmp_bhk_data.dat",
         value1 = value1[fltr_nonnan]
         value2 = value2[fltr_nonnan]
     #-> Analyze the data
-    fltr_ux = censor == -1 # Upper limit X
-    fltr_uy = censor == -2 # Upper limit Y
+    fltr_uy = censor == -1 # Upper limit Y
+    fltr_ux = censor == -2 # Upper limit X
     fltr_ub = censor == -3 # Upper limit Both
-    fltr_um = censor == -4 # Upper limit Mix
-    fltr_lx = censor == 1  # Lower limit X
-    fltr_ly = censor == 2  # Lower limit Y
+    fltr_um = censor == -4 # Mix with Y upper limit
+    fltr_ly = censor == 1  # Lower limit Y
+    fltr_lx = censor == 2  # Lower limit X
     fltr_lb = censor == 3  # Lower limit Both
-    fltr_lm = censor == 4  # Lower limit Mix
+    fltr_lm = censor == 4  # Mix with Y lower limit
     nUx = np.sum(fltr_ux)
     nUy = np.sum(fltr_uy)
     nUb = np.sum(fltr_ub)
@@ -317,8 +339,8 @@ def bhkmethod(censor, value1, value2, bhk_data="tmp_bhk_data.dat",
     nLb = np.sum(fltr_lb)
     nLm = np.sum(fltr_lm)
     if verbose:
-        print("Upper limits: X({0}) Y({1}) Both({2}) Mix({3})".format(nUx, nUy, nUb, nUm))
-        print("Lower limits: X({0}) Y({1}) Both({2}) Mix({3})".format(nLx, nLy, nLb, nLm))
+        print("Upper limits: X({0}) Y({1}) Both({2}) Mix4Y({3})".format(nUx, nUy, nUb, nUm))
+        print("Lower limits: X({0}) Y({1}) Both({2}) Mix4Y({3})".format(nLx, nLy, nLb, nLm))
     #-> Dump the data file
     data = np.array( np.transpose([censor, value1, value2]) )
     np.savetxt(bhk_data, data, delimiter=" ", fmt=["%d", "%.4f", "%.4f"])
@@ -344,8 +366,8 @@ def bhkmethod(censor, value1, value2, bhk_data="tmp_bhk_data.dat",
     n_z = count + 1
     n_p = count + 2
     results = {
-        "tau": re.findall(prog, content[n_tau])[0],
-        "z-value": re.findall(prog, content[n_z])[0],
-        "Probability": re.findall(prog, content[n_p])[0]
+        "tau": eval(re.findall(prog, content[n_tau])[0]),
+        "z-value": eval(re.findall(prog, content[n_z])[0]),
+        "Probability": eval(re.findall(prog, content[n_p])[0])
     }
     return results
