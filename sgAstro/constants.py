@@ -14,8 +14,9 @@ k_ev  = 8.6173303e-5 # eV/K
 k_erg = 1.38064852e-16 # erg/K
 
 #-> Planck constant
-h_j  = 6.626070040e-34 # J*s
-h_ev = 4.135667662e-15 # eV*s
+h_j   = 6.626070040e-34 # J*s
+h_erg = 6.62606957e-27 #erg s
+h_ev  = 4.135667662e-15 # eV*s
 
 #-> Time
 yr = 3.154e+7 # second
