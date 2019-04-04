@@ -70,7 +70,7 @@ def kmestimate(censors, values, kme_data="tmp_kme_data.dat", kme_output="tmp_kme
 
     Notes
     -----
-    The the convention of "percentile" for kmestimate is on the contrary of our common 
+    The the convention of "percentile" for kmestimate is on the contrary of our common
     definition.  As explained above, the returned percentiles are from low to high.
     """
     censors = np.atleast_1d(censors)
@@ -146,10 +146,10 @@ def twosampt(censor1, value1, censor2, value2,
     The results are the probabilities for the two input samples drawn from
     the same parent sample.  The detailed explanations can be found in:
         http://stsdas.stsci.edu/cgi-bin/gethelp.cgi?twosampt
-    
-    If the results of the tests differ significantly, then the Peto-Prentice 
-    test is probably the most reliable.  Peto-Prentice test reduces to Gehan 
-    test when there are no censored 
+
+    If the results of the tests differ significantly, then the Peto-Prentice
+    test is probably the most reliable.  Peto-Prentice test reduces to Gehan
+    test when there are no censored
     observations.
 
     Parameters
@@ -174,7 +174,7 @@ def twosampt(censor1, value1, censor2, value2,
     Returns
     -------
     results : dict
-        The possibilities for the two samples to be drawn from the
+        The probabilities for the two samples to be drawn from the
         sampe parent sample.  The methods adopted here are:
             Gehan Permutation
             Gehan Hypergeometric
@@ -184,12 +184,12 @@ def twosampt(censor1, value1, censor2, value2,
 
     Notes
     -----
-    The two versions of the Gehan test assume that the censoring patterns of 
-    the two samples are the same, but the version with hypergeometric variance 
-    is more reliable in case of different censoring patterns. The logrank test 
-    results appear to be correct as long as the censoring patterns are not very 
-    different. Peto-Prentice seems to be the test least affected by differences 
-    in the censoring patterns. There is little known about the limitations of 
+    The two versions of the Gehan test assume that the censoring patterns of
+    the two samples are the same, but the version with hypergeometric variance
+    is more reliable in case of different censoring patterns. The logrank test
+    results appear to be correct as long as the censoring patterns are not very
+    different. Peto-Prentice seems to be the test least affected by differences
+    in the censoring patterns. There is little known about the limitations of
     the Peto-Peto test.
     """
     value1  = np.atleast_1d(value1)
@@ -268,7 +268,7 @@ def bhkmethod(censor, value1, value2, bhk_data="tmp_bhk_data.dat",
     censor : array like
         The list of censors, 0 for detections; negative values for upper limits,
         and positive for lower limits; 1, 2, 3, and 4 for X, Y, Both, and Mix.
-                                          
+
         Censoring  can  be  categorized  in  three  groups: detection, upper
         limit, and lower limit. In general, if the data point  is  detected,
         the  indicator  is  zero;  for an upper limit, the indicator will be
