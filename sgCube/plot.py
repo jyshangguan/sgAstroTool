@@ -323,8 +323,8 @@ def Plot_Map(mom, cmap="viridis", norm=None, FigAx=None, imshow_interpolation="n
         ax.minorticks_on()
         ax.tick_params(axis='both', which='major', length=8, width=1., labelsize=18)
         ax.tick_params(axis='both', which='minor', length=5, width=1., labelsize=18)
-        ax.set_xlabel('R.A. Offset (")', fontsize=24)
-        ax.set_ylabel('Dec. Offset (")', fontsize=24)
+        ax.set_xlabel('R. A. Offset (")', fontsize=24)
+        ax.set_ylabel('Decl. Offset (")', fontsize=24)
     #-> Draw the colorbar
     if colorbar_on:
         divider = make_axes_locatable(ax)
