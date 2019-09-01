@@ -337,7 +337,7 @@ def sum_mask(data, mask):
     return np.sum(data[mask])
 
 def Photometry_Mask(data, mask, rms_iteration=20, iteration_max=2000,
-                    tolerance=0.95, verbose=False, show_sample=False):
+                    tolerance=0.95, verbose=False, show_sample=False, mask_bkg=None):
     """
     Measure the flux and uncertainty of the masked region.
 
@@ -357,6 +357,9 @@ def Photometry_Mask(data, mask, rms_iteration=20, iteration_max=2000,
         Print more information if True.
     show_sample : bool, default: False
         Provide the map of sampled pixels.
+    mask_bkg (optional) : 2D array
+        The mask of the background source.  True for sky pixel, False for
+        contaminated pixel.
 
     Returns
     -------
@@ -369,6 +372,10 @@ def Photometry_Mask(data, mask, rms_iteration=20, iteration_max=2000,
     """
     ny, nx = data.shape
     assert mask.shape == (ny, nx)
+    if mask_bkg is None:
+        mask_bkg = ~mask
+    else:
+        assert mask_bkg.shape == (ny, nx)
     #-> Sum the flux of the source
     flux = sum_mask(data, mask)
     if show_sample:
@@ -377,7 +384,8 @@ def Photometry_Mask(data, mask, rms_iteration=20, iteration_max=2000,
     #-> Calculate the RMS of the sky flux
     #--> The number of pixels should be the same as that of the source.
     npix_src = np.sum(mask)
-    r_mask_sky = np.sqrt(npix_src / np.pi) # The radius of the circular aperture to measure the sky flux.
+    #--> The radius of the circular aperture to measure the sky flux.
+    r_mask_sky = np.sqrt(npix_src / np.pi) + 0.1 # Add 0.1 to avoid the digital problem
     if verbose:
         print("The source has {0} pixels and the radius is {1:.2f}!".format(npix_src, r_mask_sky))
     #--> Sample the sky many times
@@ -388,16 +396,22 @@ def Photometry_Mask(data, mask, rms_iteration=20, iteration_max=2000,
             break
         pos = random_pos_pix((ny, nx))
         meshX, meshY = np.meshgrid(np.arange(nx), np.arange(ny))
-        mask_sky = mask_ellipse_single([meshX, meshY], pos, (r_mask_sky, r_mask_sky), 0) # Generate a circular mask
-        mask_sky = (~mask) & mask_sky # Throw away the pixels of the source
+        mask_sky_org = mask_ellipse_single([meshX, meshY], pos, (r_mask_sky, r_mask_sky), 0) # Generate a circular mask
+        mask_sky = mask_bkg & mask_sky_org # Throw away the pixels of the source
         npix_use = np.float(np.sum(mask_sky))
         if (npix_use / npix_src) > tolerance: # If there are enough useful pixels, we take the sampling
-            skyList.append(sum_mask(data, mask_sky))
+            flux_sky = sum_mask(data, mask_sky)
+            if np.isnan(flux_sky):
+                if verbose:
+                    print("*The sampled flux ({0}) is nan!".format(pos))
+                continue
+            else:
+                skyList.append(flux_sky)
             counter += 1
             if show_sample:
                 samp_pattern[mask_sky] = 1
         elif verbose:
-            print("*The sampled pixels are {0}.".format(npix_use))
+            print("*The sampled pixels ({0}) are {1}/{2}.".format(pos, npix_use, np.sum(mask_sky_org)))
     if len(skyList) < rms_iteration:
         raise RuntimeWarning("The sky sampling is not enough!")
     unct = np.std(skyList)
@@ -454,7 +468,7 @@ def ReadMap(filename):
     """
     hdulist = fits.open(filename)
     header = hdulist[0].header
-    data = hdulist[0].data
+    data = np.squeeze(hdulist[0].data)
     beam = Beam(header["BMAJ"]*u.deg, header["BMIN"]*u.deg, header["BPA"]*u.deg)
     mom = Projection(data, wcs=WCS(header, naxis=2), beam=beam, unit=header["BUNIT"])
     return mom
