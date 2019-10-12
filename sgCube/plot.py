@@ -235,7 +235,8 @@ def Plot_Line_Diagnose(spc_x, spc_f, rmsFlag=[-400, 400], do_fit=True, plot_w20=
     spc_rms = bf.rms_spectrum(spc_x.value, spc_f.value, flag=rmsFlag)
     spc_med = bf.median_spectrum(spc_x.value, spc_f.value, flag=rmsFlag)
     ax.axhline(y=spc_med, color="gray", alpha=0.5, ls="--")
-    ax.axhspan(spc_med-spc_rms, spc_med+spc_rms, color="gray", alpha=0.3, label=r"1 $\sigma$")
+    ax.axhspan(spc_med-spc_rms, spc_med+spc_rms, color="gray", alpha=0.3, label=r"$\pm1\,\sigma$")
+    ax.axhline(y=spc_med+3.*spc_rms, color="gray", alpha=1., ls="--", label=r"3 $\sigma$")
     #-> Plot the busyfit results
     flag_fit = False
     if do_fit:
