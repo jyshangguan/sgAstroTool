@@ -1,3 +1,4 @@
+from __future__ import print_function
 import numpy as np
 
 __all__ = ["median_spectrum", "rms_spectrum"]

@@ -1,3 +1,5 @@
+from __future__ import division
+from __future__ import print_function
 import numpy as np
 import extinction as e
 __all__ = ["eBmV_dc", "Alamda", "Tau_Lam", "Factor_obs2int"]
@@ -134,5 +136,5 @@ if __name__ == "__main__":
     alam = Alamda(wO3, ebmv)
     taulam = Tau_Lam(alam)
     f = Factor_obs2int(alam)
-    print ebmv, f, np.log10(f)
-    print np.log10(np.exp(taulam))
+    print(ebmv, f, np.log10(f))
+    print(np.log10(np.exp(taulam)))

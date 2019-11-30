@@ -1,5 +1,9 @@
+from __future__ import division
+from builtins import zip
+from builtins import range
+from builtins import object
 import numpy as np
-from gaussian import *
+from .gaussian import *
 from scipy.optimize import curve_fit
 import emcee
 import corner
@@ -184,7 +188,7 @@ class SpectraFitter(object):
             percList = [16, 50, 84]
         if qfunction is None:
             v = np.percentile(sList, percList, axis=0)
-            results = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]), zip(*v))
+            results = [(v[1], v[2]-v[1], v[1]-v[0]) for v in zip(*v)]
         else:
             quant = np.array(qfunction(sList, *qf_args))
             if len(quant.shape) == 1:
@@ -192,7 +196,7 @@ class SpectraFitter(object):
                 results = (v[1], v[2]-v[1], v[1]-v[0])
             else:
                 v = np.percentile(quant, percList, axis=0)
-                results = map(lambda v: (v[1], v[2]-v[1], v[1]-v[0]), zip(*v))
+                results = [(v[1], v[2]-v[1], v[1]-v[0]) for v in zip(*v)]
         return results
 
     def plot_corner(self, burnin, **kwargs):

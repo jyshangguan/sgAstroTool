@@ -147,6 +147,6 @@ def linewidth_nky(velocity, flux, resolution, scale=5, get_error=False, nmc=100,
     result = sp.GrowthCurve(res=resolution, nidx=nidx, **der_cg_kws)
     if get_error:
         error = sp.GrowthCurveE(res=resolution, n_times=nmc, nidx=nidx, **der_cg_kws)
-        for kw in error.keys():
+        for kw in error:
             result[kw] = error[kw]
     return result
