@@ -4,6 +4,10 @@
 #   http://localhost:8888/notebooks/Softwares/my_module/dev_Hubble%20flow%20velocity%20correction.ipynb
 ##
 
+from __future__ import division
+from __future__ import print_function
+from builtins import range
+from builtins import object
 import numpy as np
 from astropy import units as u
 from astropy.coordinates import SkyCoord
@@ -107,7 +111,7 @@ def v_LocalGroup(v_h, l, b, v_a=316., l_a=93., b_a=-4., verbose=False):
     """
     X, Y, Z = ApexConversionCoefficient(v_a, l_a, b_a)
     if verbose:
-        print "X={0:.4f}, Y={1:.4f}, Z={2:.4f}".format(X, Y, Z)
+        print("X={0:.4f}, Y={1:.4f}, Z={2:.4f}".format(X, Y, Z))
     l = l * deg2rad
     b = b * deg2rad
     v_lg = v_h + X * np.cos(l) * np.cos(b) + Y * np.sin(l) * np.cos(b) + \
