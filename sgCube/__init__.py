@@ -1,2 +1,2 @@
-from analysis import *
-from plot import *
+from .analysis import *
+from .plot import *
