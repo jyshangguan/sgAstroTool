@@ -1,10 +1,12 @@
+from __future__ import division
+from __future__ import absolute_import
 import numpy as np
-from constants import k_erg, ls_km
+from .constants import k_erg, ls_km
 
 def effective_area(N, d_dish=7., band=6):
     """
     The effective area.
-    
+
     Parameters
     ----------
     N : int
@@ -13,7 +15,7 @@ def effective_area(N, d_dish=7., band=6):
         Diameter of the dish, units: m.
     band : int
         The number of the band.
-    
+
     Returns
     -------
     aeff : float
@@ -45,7 +47,7 @@ def effective_area(N, d_dish=7., band=6):
         itaDict = itaDict_12
     else:
         raise ValueError("The dish diameter ({0}) is not correct!".format(d_dish))
-    if not band in itaDict.keys():
+    if not band in itaDict:
         raise ValueError("The band ({0}) is not recognized!".format(band))
     aeff = np.pi * (d_dish / 2.)**2. * itaDict[band]
     return aeff
@@ -53,12 +55,12 @@ def effective_area(N, d_dish=7., band=6):
 def omega(theta):
     """
     Calculate the beam solid angle.
-    
+
     Parameters
     ----------
     theta : float
         The spatial resolution, units: arcsec.
-        
+
     Returns
     -------
     omg : float
@@ -68,12 +70,12 @@ def omega(theta):
     omg = np.pi * theta**2 / (4 * np.log(2))
     return omg
 
-def sigma_S(Tsys, wr=1.1, Aeff=1., fs=0, itaq=0.96, itac=0.88, N=10, 
+def sigma_S(Tsys, wr=1.1, Aeff=1., fs=0, itaq=0.96, itac=0.88, N=10,
             npol=2, delta_nu=1., tint=1):
     """
-    The fomular to calculate the point source sensitivity.  
+    The fomular to calculate the point source sensitivity.
     Please refer to ALMA Technical Handbook.
-    
+
     Parameters
     ----------
     Tsys : float
@@ -96,7 +98,7 @@ def sigma_S(Tsys, wr=1.1, Aeff=1., fs=0, itaq=0.96, itac=0.88, N=10,
         Resolution element width, units: GHz.
     tint : float
         Integration time, units: minutes.
-        
+
     Return
     ------
     sigma : float
@@ -113,7 +115,7 @@ def sigma_S(Tsys, wr=1.1, Aeff=1., fs=0, itaq=0.96, itac=0.88, N=10,
 def Sensitivity_ALMA(band, N, Tsys, tint, delta_nu, array="ACA", **kws_sig):
     """
     Calculate the sensitivity of ALMA.
-    
+
     Parameters
     ----------
     band : int
@@ -129,7 +131,7 @@ def Sensitivity_ALMA(band, N, Tsys, tint, delta_nu, array="ACA", **kws_sig):
     array : string
         The type of the array, "ACA" or "12m", default: "ACA".
     **kws_sig : other parameters of sigma_S.
-    
+
     Returns
     -------
     sigma : float
@@ -147,7 +149,7 @@ def Sensitivity_ALMA(band, N, Tsys, tint, delta_nu, array="ACA", **kws_sig):
     kws_sig["N"] = N
     kws_sig["tint"] = tint
     kws_sig["delta_nu"] = delta_nu
-    if not "Aeff" in kws_sig.keys():
+    if not "Aeff" in kws_sig:
         kws_sig["Aeff"] = Aeff
     sigma = sigma_S(Tsys, **kws_sig)
     return sigma
