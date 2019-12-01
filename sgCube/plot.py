@@ -1,3 +1,6 @@
+from __future__ import division
+from __future__ import print_function
+from builtins import range
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
@@ -443,7 +446,7 @@ def imshow_wcs(image, wcs, coord_ref=None, plot_units="arcsec", FigAx=None, **kw
     else:
         fig, ax = FigAx
     # If the extent is not provied, calculate the relative extent
-    if not "extent" in kwargs.keys():
+    if not "extent" in kwargs:
         origin = kwargs.get("origin", "upper")
         kwargs["extent"] = get_extent_ref(wcs, image.shape, coord_ref, origin, plot_units)
     im = ax.imshow(image, **kwargs)
@@ -460,7 +463,7 @@ def contour_wcs(image, wcs, coord_ref=None, plot_units="arcsec", FigAx=None, **k
     else:
         fig, ax = FigAx
     # If the extent is not provied, calculate the relative extent
-    if not "extent" in kwargs.keys():
+    if not "extent" in kwargs:
         origin = kwargs.get("origin", "upper")
         kwargs["extent"] = get_extent_ref(wcs, image.shape, coord_ref, origin, plot_units)
     im = ax.contour(image, **kwargs)
