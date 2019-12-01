@@ -93,8 +93,8 @@ def Aperture_Photometry(image, aperture, annulus, mask=True):
     #-> Calculate the unmasked area
     aperturesMaskedArea = aperture_photometry(mask.astype(int), aperture)['aperture_sum']
     annulusMaskArea = aperture_photometry(mask.astype(int), annulus)['aperture_sum']
-    apertureArea = aperture.area() - aperturesMaskedArea
-    annulusArea = annulus.area() - annulusMaskArea
+    apertureArea = aperture.area - aperturesMaskedArea
+    annulusArea = annulus.area - annulusMaskArea
     #-> Calculate the flux of the background within the aperture
     bkg_mean = phot_table['aperture_sum_bkg'] / annulusArea
     bkg_sum = bkg_mean * apertureArea
@@ -105,7 +105,7 @@ def Aperture_Photometry(image, aperture, annulus, mask=True):
     flux_final = phot_table['aperture_sum_sub'][0]
     #-> The ratio of effective area and aperture area. It reflects how
     # reliable the measurement is.
-    coverage   = apertureArea[0] / aperture.area()
+    coverage   = apertureArea[0] / aperture.area
     apResults = {
         "flux": flux_final,
         "coverage": coverage,

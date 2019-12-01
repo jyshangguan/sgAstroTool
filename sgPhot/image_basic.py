@@ -7,7 +7,7 @@ from astropy.io import fits
 from astropy.modeling import models, fitting
 from astropy.stats import gaussian_fwhm_to_sigma, sigma_clipped_stats
 from astropy.table import Table, Column
-from photutils.utils import random_cmap
+from photutils.utils import make_random_cmap
 from astropy.visualization import AsinhStretch
 from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.wcs import WCS
@@ -16,7 +16,7 @@ import numpy as np
 from numpy.random import randn
 #from photutils import aperture_photometry, CircularAperture, CircularAnnulus
 from photutils import DAOStarFinder, deblend_sources, detect_sources, detect_threshold
-from photutils import EllipticalAperture, properties_table, source_properties
+from photutils import EllipticalAperture, source_properties
 import warnings
 
 __all__ = ["Background_Fit_Polynomial", "Segmentation_Remove_Circle",
@@ -581,7 +581,7 @@ class Image(object):
         """
         data = self.__data
         #-> Determine the detection threshold for each pixel.
-        threshold = detect_threshold(data, snr=snr_thrsh, **detect_threshold_param)
+        threshold = detect_threshold(data, nsigma=snr_thrsh, **detect_threshold_param)
         #-> If the kernel is not specified, we use a Gaussian kernel.
         if kernel is None:
             nFWHM  = gaussian2DParams.get("FWHM", 2.0)
@@ -895,7 +895,7 @@ class Image(object):
         assert not segm is None
         if ax is None:
             ax  = plt.gca()
-        rand_cmap = random_cmap(segm.max + 1, random_state=12345)
+        rand_cmap = make_random_cmap(segm.max + 1, random_state=12345)
         ax.imshow(segm, origin='lower', cmap=rand_cmap)
         return ax
 
@@ -950,7 +950,7 @@ class Image(object):
         segm = self.get_Segmentation(*args, **kwargs)
         #-> Generate the properties of the detected sources.
         props = source_properties(self.__data, segm)
-        tbl = properties_table(props)
+        tbl = props.to_table()
         self.source_table = Table([tbl["id"], tbl["xcentroid"], tbl["ycentroid"]],
                                   names=["id", "xcentroid", "ycentroid"])
         return self.source_table
@@ -969,7 +969,7 @@ class Image(object):
         None.
         """
         props = self.mask_properties
-        tbl = properties_table(props)
+        tbl = props.to_table()
         self.source_table = Table([tbl["id"], tbl["xcentroid"], tbl["ycentroid"]],
                                   names=["id", "xcentroid", "ycentroid"])
         return self.source_table
