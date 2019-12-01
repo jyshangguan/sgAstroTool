@@ -2,6 +2,7 @@
 ## This package provides some convenient wrappers of the functions from ASURV
 ## from IRAF (stsdas.analysis.statistics).
 ###
+from __future__ import print_function
 import sys
 import re
 import numpy as np
