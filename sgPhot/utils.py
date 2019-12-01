@@ -4,7 +4,7 @@
 #mag2flx(): to convert magnitude to flux
 #flx2L(): to convert flux to magnitude
 #
-
+from __future__ import division
 import numpy as np
 
 Lsun = 3.846e33 #erg/s

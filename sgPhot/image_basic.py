@@ -1,3 +1,7 @@
+from __future__ import division
+from __future__ import print_function
+from builtins import range
+from builtins import object
 from astropy.convolution import Gaussian2DKernel
 from astropy.io import fits
 from astropy.modeling import models, fitting
@@ -347,7 +351,7 @@ def Props_Refiner(image, props_l, props_h, growth, snr_thrsh, npixels_add=20,
         props_new.append(prop)
     if detail:
         #-> Plot for debug
-        print snr_thrsh
+        print("snr_thrsh: {0}".format(snr_thrsh))
         vmin = sky_median - 2 * sky_std
         vmax = sky_median + 30 * sky_std
         ax = image.plot_Image(cmap="Greys", origin='lower', vmin=vmin, vmax=vmax)

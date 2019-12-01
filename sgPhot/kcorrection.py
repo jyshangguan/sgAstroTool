@@ -1,8 +1,10 @@
+from __future__ import division
+from __future__ import absolute_import
 import ezgal
 import numpy as np
 import pysynphot as S
 from scipy.interpolate import interp1d
-from bandpass import averageFnu
+from .bandpass import averageFnu
 
 __all__ = ["loadSPModel", "kcorrect", "KCorrect", "galColor"]
 

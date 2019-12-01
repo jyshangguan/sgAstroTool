@@ -1,3 +1,4 @@
+from __future__ import division
 import ezgal
 from scipy.optimize import fsolve
 

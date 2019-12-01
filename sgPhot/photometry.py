@@ -1,3 +1,6 @@
+from __future__ import division
+from __future__ import print_function
+from builtins import range
 from astropy.table import hstack, Column
 import numpy as np
 from photutils import aperture_photometry, CircularAperture, CircularAnnulus
