@@ -2,6 +2,7 @@ from __future__ import division
 from __future__ import print_function
 from builtins import range
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 from astropy.stats import sigma_clip
@@ -101,7 +102,7 @@ def Plot_Mom_Maps(m0, m1, m2, norm0=None, norm1=None, norm2=None, contour_dict={
     if norm1 is None:
         fltr = np.logical_not(np.isnan(m1.value))
         vmin, vmax = np.percentile(m1.value[fltr], vperc1)
-        norm1 = ImageNormalize(stretch=LinearStretch(), vmin=vmin, vmax=vmax)
+        norm1 = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     fig, ax2, im2 = Plot_Map(m1, norm=norm1, contour_dict=contour_dict, beam_on=False,
                              FigAx=(fig, ax2), imshow_interpolation=map_interpolation,
                              xlim=xlim, ylim=ylim)
@@ -117,7 +118,7 @@ def Plot_Mom_Maps(m0, m1, m2, norm0=None, norm1=None, norm2=None, contour_dict={
     if norm2 is None:
         fltr = np.logical_not(np.isnan(m2.value))
         vmin, vmax = np.percentile(m2.value[fltr], vperc2)
-        norm2 = ImageNormalize(stretch=LinearStretch(), vmin=vmin, vmax=vmax)
+        norm2 = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     fig, ax3, im3 = Plot_Map(m2, norm=norm2, contour_dict=contour_dict, beam_on=False,
                              FigAx=(fig, ax3), imshow_interpolation=map_interpolation,
                              xlim=xlim, ylim=ylim)
@@ -154,7 +155,7 @@ def Plot_Channel_Maps(cube, nrows, ncols, mask=None, norm=None, contour_on=True,
     axo.spines['right'].set_visible(False)
     axo.spines['bottom'].set_visible(False)
     axo.spines['left'].set_visible(False)
-    axo.tick_params(top='off', bottom='off', left='off', right='off', labelleft='off', labelbottom='off')
+    axo.tick_params(top=False, bottom=False, left=False, right=False, labelleft=False, labelbottom=False)
     axo.set_xlabel('R.A. Offset (")', fontsize=28, labelpad=25)
     axo.set_ylabel('Dec. Offset (")', fontsize=28, labelpad=40)
     axs = fig.subplots(nrows, ncols)
@@ -167,7 +168,7 @@ def Plot_Channel_Maps(cube, nrows, ncols, mask=None, norm=None, contour_on=True,
                 m = cube[counter, :, :]
                 v = cube.spectral_axis[counter]
             except:
-                ax.axis('off')
+                ax.axis(False)
                 continue
             chnrms = SkyRMS_pixel(m.value, mask)
             contourDict={}
@@ -277,7 +278,6 @@ def Plot_Map(mom, cmap="viridis", norm=None, FigAx=None, imshow_interpolation="n
         fig, ax = FigAx
     x = mom.value
     if norm is None:
-        rms  = np.nanstd(sigma_clip(x.flatten()))
         fltr = np.logical_not(np.isnan(x))
         vperc = np.atleast_1d(colorbar_kws.get("vpercentile", 98))
         if len(vperc) == 1:
@@ -289,7 +289,7 @@ def Plot_Map(mom, cmap="viridis", norm=None, FigAx=None, imshow_interpolation="n
             raise ValueError("The length of vpercentile ({0}) is at most 2!".format(vperc))
         vmin = np.percentile(x[fltr], prc1)
         vmax = np.percentile(x[fltr], prc2)
-        norm = ImageNormalize(x, stretch=LinearStretch(), vmin=vmin, vmax=vmax)
+        norm = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     #-> Make relative coordinates
     header = mom.wcs.to_header()
     cr_ra = header["CRVAL1"]
@@ -304,6 +304,8 @@ def Plot_Map(mom, cmap="viridis", norm=None, FigAx=None, imshow_interpolation="n
     dec1 = (dec1.value - cr_dec + 0.5 * cd_dec) * 3600
     extent = [ra0, ra1, dec0, dec1]
     #-> Plot the image
+    cmap = matplotlib.cm.get_cmap(cmap)
+    cmap.set_bad(color='w', alpha=1.)
     im = ax.imshow(x, cmap=cmap, extent=extent, norm=norm, origin="lower", interpolation=imshow_interpolation)
     ax.set_aspect("equal")
     if not xlim is None:

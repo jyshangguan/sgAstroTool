@@ -53,7 +53,7 @@ def get_segmentation(data, snr_thrsh=3., npixels=5, kernel=None, deblend=False,
     None.
     """
     #-> Determine the detection threshold for each pixel.
-    threshold = detect_threshold(data, snr=snr_thrsh, **detect_threshold_param)
+    threshold = detect_threshold(data, nsigma=snr_thrsh, **detect_threshold_param)
     #-> If the kernel is not specified, we use a Gaussian kernel.
     if kernel is None:
         nFWHM  = gaussian2DParams.get("FWHM", 2.0)
