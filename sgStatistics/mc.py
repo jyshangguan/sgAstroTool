@@ -1,6 +1,7 @@
 # This package provides some functions using the Monte Carlo method.
 #
-
+from __future__ import print_function
+from builtins import range
 import numpy as np
 
 __all__ = ["dataDiscretePerturber", "dataContinuePerturber", "dataBinPerturb"]
@@ -51,10 +52,9 @@ def dataDiscretePerturber(parData, lparData, uparData, parList, QuietMode=True):
             lpar = parList[lidx]
             upar = parList[uidx]
             if not QuietMode:
-                print "You need to enlarge the error bar!"
-                print np.argmax(fltr_par), lpar, par, upar
+                print("You need to enlarge the error bar!")
+                print(np.argmax(fltr_par), lpar, par, upar)
             fltr_par = (parList<=upar) & (parList>=lpar)
-        #print np.argmax(fltr_par), lpar, par, upar, "\n"
         par_sampled = np.random.choice(parList[fltr_par], 1)[0]
         parPert.append(par_sampled)
     parPert = np.array(parPert)
@@ -111,7 +111,7 @@ def dataContinuePerturber(parData, lparData, uparData, parMask=None, QuietMode=T
         par_sampled = (upar - lpar) * np.random.randn() + par
         parPert.append(par_sampled)
         if not QuietMode:
-            print "{0:.2f}, {1:.2f}, {2:.2f}, {3:.2f}".format(lpar, par, upar, par_sampled)
+            print("{0:.2f}, {1:.2f}, {2:.2f}, {3:.2f}".format(lpar, par, upar, par_sampled))
     parPert = np.array(parPert)
     return parPert
 

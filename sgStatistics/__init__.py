@@ -1,1 +1,2 @@
-from mc import *
+from __future__ import absolute_import
+from .mc import *
