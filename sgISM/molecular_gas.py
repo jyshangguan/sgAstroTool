@@ -1,11 +1,12 @@
+from __future__ import division
 import numpy as np
 __all__ = ["coLuminosity", "Lco2MH2"]
 
 def coLuminosity(Ico, nu_rest, DL, z):
     """
-    Calculate the line luminosity of CO, based on Equation (3) of 
+    Calculate the line luminosity of CO, based on Equation (3) of
     Solomon & Vanden Bout (2005).
-    
+
     Parameters
     ----------
     Ico : array like
@@ -16,7 +17,7 @@ def coLuminosity(Ico, nu_rest, DL, z):
         The luminosity distance.
     z : float
         The redshift.
-    
+
     Returns
     -------
     Lco : array like
@@ -29,7 +30,7 @@ def coLuminosity(Ico, nu_rest, DL, z):
 def Lco2MH2(Lco, alphaCO=4.3, rLines=1.):
     """
     Calculate the molecular gas mass.
-    
+
     Parameters
     ----------
     Lco : array like
@@ -38,7 +39,7 @@ def Lco2MH2(Lco, alphaCO=4.3, rLines=1.):
         The CO-to-MH2 conversion factor.
     rLines : float
         The line luminosity ratio, say r21=L_CO(2-1)/L_CO(1-0).
-    
+
     Returns
     -------
     mH2 : array like
