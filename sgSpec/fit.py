@@ -142,6 +142,7 @@ class SpectraFitter(object):
         """
         Get the marginalized samples.
         """
+        assert type(burnin) is int
         samples = self.sampler.chain[:, burnin:, :].reshape((-1, self.ndim))
         return samples
 

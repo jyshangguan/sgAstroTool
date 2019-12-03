@@ -109,14 +109,15 @@ def mask_ellipse_single(pos, ellipse_center, ellipse_sa, ellipse_pa):
 
     Parameters
     ----------
-    pos : list
-        The list of two meshgrids [X, Y].
-    ellipse_center : list
-        The coordinate of the center of the ellipse [x, y].
-    ellipse_sa : list
-        The semi-major axis and semi-minor axis of the ellipse, (a, b).
+    pos : tuple
+        The tuple of two meshgrids (X, Y).
+    ellipse_center : tuple
+        The coordinate of the center of the ellipse (x, y), units: pixel.
+    ellipse_sa : tuple
+        The semi-major axis and semi-minor axis of the ellipse, (a, b), units:
+        pixel.
     ellipse_pa : float
-        The position angle of the ellipse.
+        The position angle of the ellipse, units: radian.
 
     Returns
     -------
@@ -208,12 +209,52 @@ def Mask_Image_Ellipse(data, snr_thrsh=2., wcs=None, growth=4., source_position=
 def Mask_Fix_Ellipse(shape, center, semi_axes, pa):
     """
     Generate a mask with given position and size.
+
+    Parameters
+    ----------
+    shape : tuple (ny, nx)
+        The shape of the spatial dimension.
+    center : tuple (x, y)
+        The center of the ellipse, units: pixel.
+    semi_axes : tuple (a, b)
+        The semimajor axis and semiminor axis, units: pixel.
+    pa : float
+        The position angle of the ellipse, units: radian.
+
+    Returns
+    -------
+    mask : 2D array
+        The mask with a random elliptical area of True.
     """
     ny, nx = shape
     x = np.arange(nx)
     y = np.arange(ny)
     xx, yy = np.meshgrid(x, y)
-    mask = mask_ellipse_single([xx, yy], center, semi_axes, pa)
+    mask = mask_ellipse_single((xx, yy), center, semi_axes, pa)
+    return mask
+
+def Mask_Random_Ellipse(shape, semi_axes, pa):
+    """
+    Generate a random mask with with random position and given size.
+
+    Parameters
+    ----------
+    shape : tuple (ny, nx)
+        The shape of the spatial dimension.
+    semi_axes : tuple (a, b)
+        The semimajor axis and semiminor axis, units: pixel.
+    pa : float
+        The position angle of the ellipse, units: radian.
+
+    Returns
+    -------
+    mask : 2D array
+        The mask with a random elliptical area of True.
+    """
+    ny, nx = shape
+    center = random_pos_pix([ny, nx])
+    xx, yy = np.meshgrid(np.arange(nx), np.arange(ny))
+    mask = mask_ellipse_single((xx, yy), center, semi_axes, pa)
     return mask
 
 def Mask_Cube(mask_2d, cube):
@@ -397,9 +438,7 @@ def Photometry_Mask(data, mask, rms_iteration=20, iteration_max=2000,
     for loop in range(iteration_max):
         if counter >= rms_iteration:
             break
-        pos = random_pos_pix((ny, nx))
-        meshX, meshY = np.meshgrid(np.arange(nx), np.arange(ny))
-        mask_sky_org = mask_ellipse_single([meshX, meshY], pos, (r_mask_sky, r_mask_sky), 0) # Generate a circular mask
+        mask_sky_org = Mask_Random_Ellipse((ny, nx), (r_mask_sky, r_mask_sky), 0) # Generate a circular mask
         mask_sky = mask_bkg & mask_sky_org # Throw away the pixels of the source
         npix_use = np.float(np.sum(mask_sky))
         if (npix_use / npix_src) > tolerance: # If there are enough useful pixels, we take the sampling
@@ -454,6 +493,29 @@ def Spectrum_Mask(cube, mask):
     spc_f = cube_msk.sum(axis=(1,2))
     spc_x = cube_msk.spectral_axis
     return (spc_x, spc_f)
+
+def Spectrum_Random(cube, nspec, semi_axes, pa, mask=None, tolerance=0.95,
+                    maxiters=200):
+    """
+    Extract the spectra randomly from the data cube.
+    """
+    nz, ny, nx = cube.shape
+    if mask is None:
+        mask = np.ones([ny, nx], dtype=bool)
+    else:
+        assert (len(mask.shape) == 2) & (mask.shape[0] == ny) & (mask.shape[1] == nx)
+    spcList = []
+    for loop in range(maxiters):
+        if len(spcList) >= nspec:
+            break
+        mask_apt = Mask_Random_Ellipse(shape=(ny, nx), semi_axes=semi_axes, pa=pa)
+        mask_spc = mask & mask_apt
+        if np.sum(mask_spc) / np.sum(mask_apt) < tolerance:
+            continue
+        spcList.append(Spectrum_Mask(cube, mask_spc))
+    if len(spcList) < nspec:
+        print("Reach the maximum iterations ({0}) but cannot get enough spectra.".format(maxiters))
+    return spcList
 
 def ReadMap(filename):
     """
