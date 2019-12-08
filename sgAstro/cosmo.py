@@ -12,7 +12,7 @@ import numpy as np
 from astropy import units as u
 from astropy.coordinates import SkyCoord
 from astropy.cosmology import FlatLambdaCDM
-__all__ = ["z2DL", "v_LocalGroup", "Attractor", "v_Cosmic",
+__all__ = ["z2DL", "z2DA", "arcsec2kpc", "v_LocalGroup", "Attractor", "v_Cosmic",
            "HubbleFlowDistance"]
 
 ls_km   = 2.99792458e5 # km/s
@@ -47,6 +47,62 @@ def z2DL(z, H0=67.8, Om0=0.308, verbose=True):
     cosmo = FlatLambdaCDM(H0=H0, Om0=Om0)
     DL = cosmo.luminosity_distance(z).value #Luminosity distance in unit Mpc.
     return DL
+
+def z2DA(z, H0=67.8, Om0=0.308, verbose=True):
+    '''
+    This function calculate the angular diameter distance from the redshift.
+    The default cosmology comes from Planck Collaboration (2015).
+
+    Parameters
+    ----------
+    z : float
+        The redshift
+    H0 : float
+        The Hubble constant, default: 67.8
+    Om0 : float
+        Omega_0, default: 0.308
+
+    Returns
+    -------
+    DA : float
+        The angular diameter distance, unit: Mpc.
+
+    Notes
+    -----
+    None.
+    '''
+    if (np.sum(z < 0.02) > 0) & verbose:
+        print("There are redshifts too small. The correction for peculiar velocity is necessary!")
+        print("The function HubbleFlowDistance() can be used.")
+    cosmo = FlatLambdaCDM(H0=H0, Om0=Om0)
+    DA = cosmo.angular_diameter_distance(z).value #Luminosity distance in unit Mpc.
+    return DA
+
+def arcsec2kpc(z, H0=67.8, Om0=0.308, verbose=True):
+    """
+    Calculate the proper scale per arcsec at given redshift. Basically call
+    FlatLambdaCDM().arcsec_per_kpc_proper().
+
+    Parameters
+    ----------
+    z : float
+        The redshift
+    H0 : float
+        The Hubble constant, default: 67.8
+    Om0 : float
+        Omega_0, default: 0.308
+
+    Returns
+    -------
+    as2kpc : float
+        The conversion factor, unit: kpc/arcsec.
+    """
+    if (np.sum(z < 0.02) > 0) & verbose:
+        print("There are redshifts too small. Not sure whether the result is robust or not!")
+    cosmo = FlatLambdaCDM(H0=H0, Om0=Om0)
+    kpc2as = cosmo.arcsec_per_kpc_proper(z)
+    as2kpc = 1. / kpc2as.value
+    return as2kpc
 
 def ApexConversionCoefficient(v_a, l_a, b_a):
     """
