@@ -45,5 +45,9 @@ def cenken(y, yc, x, xc):
     results = nada.cenken(y, yc, x, xc)
     rdict = {}
     for n, idx in zip(results.names, range(len(results))):
-        rdict[n] = results[idx][0]
+        v = results[idx]
+        if type(v) == rpy2.rinterface.NULLType:
+            rdict[n] = np.nan
+        else:
+            rdict[n] = v[0]
     return rdict
