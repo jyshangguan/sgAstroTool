@@ -7,6 +7,10 @@ from .gaussian import *
 from scipy.optimize import curve_fit
 import emcee
 import corner
+import matplotlib.pyplot as plt
+import matplotlib.gridspec as gridspec
+import matplotlib.cm as cm
+import six
 
 __all__ = ["Fit_Double_Gaussian", "Fit_Gaussian_DoublePeak", "SpectraFitter"]
 
@@ -207,6 +211,52 @@ class SpectraFitter(object):
         samples = self.get_samples(burnin)
         fig = corner.corner(samples, **kwargs)
         return fig
+
+    def plot_trace(self, burnin, names):
+        "Plot trace of MCMC walkers"
+
+        ######################################
+        # Setup plot:
+        f = plt.figure()
+        scale = 1.75
+        nRows = len(names)
+        nWalkers = self.sampler.chain.shape[0]
+
+        f.set_size_inches(4.*scale, nRows*scale)
+        gs = gridspec.GridSpec(nRows, 1, hspace=0.2)
+
+        axes = []
+        alpha = max(0.01, 1./nWalkers)
+
+        # Define random color inds for tracking some walkers:
+        nTraceWalkers = 5
+        cmap = cm.viridis
+        alphaTrace = 0.8
+        lwTrace = 1.5
+        trace_inds = np.random.randint(0, nWalkers, size=nTraceWalkers)
+        trace_colors = []
+        for i in six.moves.xrange(nTraceWalkers):
+            trace_colors.append(cmap(1./np.float(nTraceWalkers)*i))
+
+        norm_inds = np.setdiff1d(range(nWalkers), trace_inds)
+
+        for k in six.moves.xrange(nRows):
+            axes.append(plt.subplot(gs[k,0]))
+
+            axes[k].plot(self.sampler.chain[norm_inds, burnin:, k].T, '-', color='black', alpha=alpha)
+
+            for j in six.moves.xrange(nTraceWalkers):
+                axes[k].plot(self.sampler.chain[trace_inds[j], burnin:, k].T, '-',
+                             color=trace_colors[j], lw=lwTrace, alpha=alphaTrace)
+
+            axes[k].set_ylabel(names[k])
+
+            if k == nRows-1:
+                axes[k].set_xlabel('Step number')
+            else:
+                axes[k].set_xticks([])
+
+        return axes, f
 
     def get_sampler(self):
         """

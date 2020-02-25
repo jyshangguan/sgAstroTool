@@ -3,7 +3,8 @@ import numpy as np
 #from scipy.optimize import curve_fit
 #from scipy.optimize import minimize, brentq
 
-__all__ = ["Gaussian", "Double_Gaussian", "Gauss_Hermite", "Gaussian_DoublePeak"]
+__all__ = ["Gaussian", "Double_Gaussian", "Gauss_Hermite", "Gaussian_DoublePeak",
+           "Gaussian_DoublePeak_Asymmetric"]
 
 def Gaussian(x, a, b, c):
     """
@@ -61,10 +62,10 @@ def Gauss_Hermite(x, a, b, c, h3=0., h4=0., z=0):
     res = a * np.exp(exp) + z
     return res
 
+
 def Gaussian_DoublePeak(x, ag, ac, v0, sigma, w):
     """
     The Gaussian Double Peak function, Eq. (A2) of Tiley et al. (2016MNRAS.461.3494T).
-
     Parameters
     ----------
     x : 1D array
@@ -79,7 +80,6 @@ def Gaussian_DoublePeak(x, ag, ac, v0, sigma, w):
         The standard deviation of the half-Gaussian profile.  Require sigma > 0.
     w : float
         The half-width of the central parabola.  Require w > 0.
-
     Returns
     -------
     y : 1D array
@@ -99,6 +99,54 @@ def Gaussian_DoublePeak(x, ag, ac, v0, sigma, w):
     y_r = Gaussian(x_r, ag, vc_r, sigma)
     #-> Center
     a = (ag - ac) / w**2.
+    fltr_c = (x >= vc_l) & (x <= vc_r)
+    x_c = x[fltr_c]
+    y_c = ac + a * (x_c - v0)**2.
+    y = np.concatenate([y_l, y_c, y_r])
+    return y
+
+
+def Gaussian_DoublePeak_Asymmetric(x, ag_left, ag_right, ac, v0, sigma, w_left, w_right):
+    """
+    The Gaussian Double Peak function, Eq. (A2) of Tiley et al. (2016MNRAS.461.3494T) but adjusted
+    to allow for asymmetric peak in the double horn profile.
+
+    Parameters
+    ----------
+    x : 1D array
+        The variable of the function.  It should be monochromatically increasing.
+    ag_left : float
+        The peak flux of the left hand half-Gaussian.  Require ag_left > 0.
+    ag_right : float
+        The peak flux of the right hand half-Gaussian.  Require ag_right > 0.
+    ac : float
+        The flux at the central velocity.  Require ac > 0.
+    v0 : float
+        The center of the profile.
+    sigma : float
+        The standard deviation of the half-Gaussian profile.  Require sigma > 0.
+    w : float
+        The half-width of the central parabola.  Require w > 0.
+
+    Returns
+    -------
+    y : 1D array
+        The Gaussian Double Peak profile.
+    """
+    assert (ag_left > 0) & (ag_right > 0) & (ac > 0) & (sigma > 0) & (w_left > 0) & (w_right > 0)
+    x = np.atleast_1d(x)
+    #-> Left
+    vc_l = v0 - w_left
+    fltr_l = x < (vc_l)
+    x_l = x[fltr_l]
+    y_l = Gaussian(x_l, ag_left, vc_l, sigma)
+    #-> Right
+    vc_r = v0 + w_right
+    fltr_r = x > vc_r
+    x_r = x[fltr_r]
+    y_r = Gaussian(x_r, ag_right, vc_r, sigma)
+    #-> Center
+    a = (ag_left - ag_right) / (w_left**2. - w_right**2.)
     fltr_c = (x >= vc_l) & (x <= vc_r)
     x_c = x[fltr_c]
     y_c = ac + a * (x_c - v0)**2.
