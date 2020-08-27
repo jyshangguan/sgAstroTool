@@ -16,7 +16,7 @@ import numpy as np
 from numpy.random import randn
 #from photutils import aperture_photometry, CircularAperture, CircularAnnulus
 from photutils import DAOStarFinder, deblend_sources, detect_sources, detect_threshold
-from photutils import EllipticalAperture, source_properties
+from photutils import EllipticalAperture, CircularAperture, source_properties
 import warnings
 
 __all__ = ["Background_Fit_Polynomial", "Segmentation_Remove_Circle",
@@ -127,6 +127,53 @@ def Props_Remove_Circle(props, circle):
         else:
             props_new.append(prop)
     return props_new
+
+
+def Table_Remove_Circle(tb, circle):
+    '''
+    Remove the table of sources from the input circular region.
+
+    Parameters
+    ----------
+    tb : list
+        The table of sources from DAOStarFinder.find_stars().
+    circle : tuple or CircularAperture
+        The parameter of the circular area, (x, y, r), center position and the
+        radius.  Or the CircularAperture if one wants to include more positions
+        together with the same radius.
+
+    Returns
+    -------
+    tb_new : list
+        The table  with the circular region ignored.
+
+    Notes
+    -----
+    Mainly used to ignore the target when detect the field stars.
+    '''
+    if type(circle) is tuple:
+        fltr = []
+        for loop in range(len(tb)):
+            pos = (tb['xcentroid'][loop], tb['ycentroid'][loop])
+            if check_InsideCircle(pos, (circle[0], circle[1]), circle[2]):
+                fltr.append(False)
+            else:
+                fltr.append(True)
+    elif type(circle) is CircularAperture:
+        fltr = []
+        for loop in range(len(tb)):
+            pos = (tb['xcentroid'][loop], tb['ycentroid'][loop])
+            flag = True
+            for c in circle.positions:
+                if check_InsideCircle(pos, c, circle.r):
+                    flag = False
+            fltr.append(flag)
+    else:
+        raise TypeError('circle should be either tuple or CircularAperture!')
+    fltr = np.array(fltr)
+    tb_new = tb[fltr]
+    return tb_new
+
 
 def Mask_Ellipse_Single(pos, ellipse_center, ellipse_sa, ellipse_pa):
     """
@@ -825,7 +872,10 @@ class Image(object):
         if stretch is None:
             stretch = AsinhStretch
         norm = ImageNormalize(vmin=vmin, vmax=vmax, stretch=stretch())
+        if 'origin' not in kwargs:
+            kwargs['origin'] = 'lower'
         ax.imshow(self.__data, norm=norm, **kwargs)
+        ax.minorticks_on()
         if w_mask:
             assert not self.mask is None
             growth = self.mask_growth
@@ -998,9 +1048,10 @@ class Image(object):
         sky_std = self.sky_std
         assert not sky_std is None
         daofind = DAOStarFinder(fwhm=fwhm_pix, threshold=threshold * sky_std)
-        tbl = daofind(self.__data)
-        self.source_table = Table([tbl["id"], tbl["xcentroid"], tbl["ycentroid"]],
-                                 names=["id", "xcentroid", "ycentroid"])
+        #tbl = daofind(self.__data)
+        #self.source_table = Table([tbl["id"], tbl["xcentroid"], tbl["ycentroid"]],
+        #                         names=["id", "xcentroid", "ycentroid"])
+        self.source_table = daofind(self.__data)
         return self.source_table
 
     def find_Source(self, ra, dec, radius):
