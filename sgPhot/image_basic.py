@@ -175,6 +175,34 @@ def Table_Remove_Circle(tb, circle):
     return tb_new
 
 
+def Table_Remove_Edge(tb, width, image_shape):
+    '''
+    Remove the table of sources on the edge of the image.
+
+    Parameters
+    ----------
+    tb : list
+        The table of sources from DAOStarFinder.find_stars().
+    width : float
+        The width of the edge.
+
+    Returns
+    -------
+    tb_new : list
+        The table  with the edge region ignored.
+
+    Notes
+    -----
+    Mainly used to ignore the target when detect the field stars.
+    '''
+    x = tb['xcentroid']
+    y = tb['ycentroid']
+    mask = ((x > width) & (x < (image_shape[1] -1 - width)) &
+            (y > width) & (y < (image_shape[0] -1 - width)))
+    tb_new = tb[mask]
+    return tb_new
+
+
 def Mask_Ellipse_Single(pos, ellipse_center, ellipse_sa, ellipse_pa):
     """
     Generate a mask with a single ellipse.
@@ -463,6 +491,7 @@ class Image(object):
         self.magzp = mag_zero_point
         self.mag2fd = mag2flux_density
         self.psf_FWHM_arcsec = psf_FWHM_arcsec
+        self.shape = data.shape
         self.flag_sky_subtraction = False
         self.background = None
         self.mask = None
