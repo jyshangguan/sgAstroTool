@@ -1,7 +1,10 @@
 import numpy as np
 from astropy.io import fits
+from photutils.isophote import EllipseGeometry
+from photutils.isophote import Ellipse
 
-__all__ = ['convert_output_string2float', 'get_model_from_header']
+__all__ = ['convert_output_string2float', 'get_model_from_header',
+           'fit_isophote']
 
 def convert_output_string2float(s):
     '''
@@ -11,7 +14,7 @@ def convert_output_string2float(s):
     ----------
     s : string
         Header information in string.
-    
+
     Returns
     -------
     v : float
@@ -22,7 +25,7 @@ def convert_output_string2float(s):
         Flag: free, contrained, or fixed.
     '''
     if s is None:
-        v = None  
+        v = None
         ve = None
         f = None
     elif '{' in s:
@@ -42,10 +45,11 @@ def convert_output_string2float(s):
         raise ValueError('Input cannot be understood: {0}'.format(s))
     return v, ve, f
 
+
 def get_model_from_header(header, parlist=None, ncomponents_max=100):
     '''
     Get model information from the header.
-    
+
     Parameters
     ----------
     header : FITS header
@@ -54,7 +58,7 @@ def get_model_from_header(header, parlist=None, ncomponents_max=100):
         List of parameter names.
     ncomponents_max : int
         Maximum number of parameters.
-    
+
     Returns
     -------
     info_dict : dict
@@ -64,7 +68,7 @@ def get_model_from_header(header, parlist=None, ncomponents_max=100):
     '''
     if parlist is None:
         parlist = ['XC', 'YC', 'MAG', 'RE', 'N', 'AR', 'PA']
-        
+
     counter = 1
     info_dict = {}
     while True:
@@ -83,3 +87,41 @@ def get_model_from_header(header, parlist=None, ncomponents_max=100):
             break
     info_dict['N_components'] = counter - 1
     return info_dict
+
+
+def fit_isophote(image, x0, y0, sma, eps=0, pa=0, **kwargs):
+    '''
+    Fit the elliptical isophotal profile.
+
+    Parameters
+    ----------
+    image : 2D array-like
+        Image data to perform isophotal analysis.
+    x0, y0 : float
+        The center pixel coordinate of the ellipse.
+    sma : float
+        The semimajor axis of the ellipse in pixels.
+    eps : ellipticity
+        The ellipticity of the ellipse.
+    pa : float
+        The position angle (in radians) of the semimajor axis in
+        relation to the postive x axis of the image array (rotating
+        towards the positive y axis). Position angles are defined in the
+        range :math:`0 < PA <= \\pi`. Avoid using as starting position
+        angle of 0., since the fit algorithm may not work properly. When
+        the ellipses are such that position angles are near either
+        extreme of the range, noise can make the solution jump back and
+        forth between successive isophotes, by amounts close to 180
+        degrees.
+    kwargs : Additional parameters feed to ellipse.fit_image().
+
+    Returns
+    -------
+    isolist : IsophoteList instance
+        A list-like object of Isophote instances, sorted by increasing
+        semimajor axis length.
+    '''
+    geometry = EllipseGeometry(x0=x0, y0=y0, sma=sma, eps=eps, pa=pa)
+    ellipse = Ellipse(image, geometry)
+    isolist = ellipse.fit_image(**kwargs)
+    return isolist
