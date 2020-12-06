@@ -10,7 +10,8 @@ from astropy.visualization import (MinMaxInterval, LinearStretch, SqrtStretch,
 
 __all__ = ['convert_output_string2float', 'get_model_from_header',
            'fit_ellipse', 'fit_isophote', 'wcs_pixel_scale', 'plot_image',
-           'convert_unit_hst2astropy', 'image_moment', 'flux2mag']
+           'convert_unit_hst2astropy', 'image_moment', 'flux2mag',
+           'grow_isophote']
 
 def plot_image(image, wcs=None, stretch='asinh', units='arcsec', vmin=None,
                vmax=None, a=None, ax=None, plain=False, **kwargs):
@@ -295,3 +296,58 @@ def flux2mag(flux, flux_err=None, zeromag=0):
     else:
         mag_err = 2.5 * np.log10(np.e) * flux_err / flux
     return mag, mag_err
+
+
+def grow_isophote(image, isophote, step=0.1, fflag=0.7, maxsma=None, maxsteps=1000):
+    '''
+    Grow the isophote with a fixed step.
+
+    Parameters
+    ----------
+    image : 2D array
+        The input image.
+    isophote : photutils.isophote.Isophote
+        The isophote to be expanded.
+    step : float (default: 0.1)
+        The step value for growing/shrinking the semimajor axis.
+    fflag : float (default: 0.7)
+        The acceptable fraction of flagged data points in the
+        sample.  If the actual fraction of valid data points is
+        smaller than this, the iterations will stop.  Flagged
+        data points are points that either lie outside the image
+        frame, are masked, or were rejected by sigma-clipping.
+    maxsma (optional) : float
+        Maximum semimajor axis length, units: pixel.
+    maxsteps : int (default: 1000)
+        Maximum steps to grow the isophote.
+
+    Returns
+    -------
+    results: photutils.isophote.IsophoteList
+    '''
+    isophote_list = []
+    counter = 0
+    iso = isophote
+    if iso.sma == 0:
+        raise ValueError('The isophote has sma=0!')
+
+    while True:
+        sma = iso.sample.geometry.update_sma(step)
+        if maxsma and sma >= maxsma:
+            break
+
+        sample = EllipseSample(image, sma, geometry=iso.sample.geometry)
+        sample.update(iso.sample.geometry.fix)
+        iso = Isophote(sample, 0, True, 4)
+
+        if (iso.nflag / (iso.nflag + iso.ndata)) > (1 - fflag):
+            break
+
+        isophote_list.append(iso)
+
+        if counter > maxsteps:
+            break
+        else:
+            counter += 1
+
+    return IsophoteList(isophote_list)

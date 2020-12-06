@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from astropy.io import fits
 from astropy.nddata import CCDData
+from astropy.nddata import Cutout2D
 from .utils import *
 
 
@@ -38,6 +39,27 @@ class imgblock_standard(object):
         self.pixelscale = pixelscale
         self.isophotes = {}
 
+    def cut_fov(self, position, size):
+        '''
+        Cut the field of view.
+
+        Parameters
+        ----------
+        position : (x, y)
+            Position of the image center, units: pixel.
+        size : (dx, dy)
+            Size of the new image, units: pixel.
+        '''
+        for loop, ext_name in enumerate(self.extensions):
+            ext, tag = self.extensions[ext_name]
+            img_cut = Cutout2D(ext.data, position=position, size=size).data
+            if ext.mask is not None:
+                mask = Cutout2D(ext.mask, position=position, size=size).data
+            else:
+                mask = None
+            ccd_new = CCDData(img_cut, wcs=ext.wcs, mask=mask, unit=ext.unit)
+            self.extensions[ext_name] = [ccd_new, tag]
+
     def fit_ellipse(self, ext_name, x0=None, y0=None, sma=None, eps=0, pa=0,
                     **kwargs):
         '''
@@ -71,7 +93,12 @@ class imgblock_standard(object):
             A list-like object of Isophote instances, sorted by increasing
             semimajor axis length.
         '''
-        image = self.get_extension(ext_name).data
+        ext = self.get_extension(ext_name)
+        if ext.mask is None:
+            image = ext.data
+        else:
+            image = np.ma.array(ext.data, mask=ext.mask)
+
         if x0 is None:
             x0 = image.shape[1] / 2
         if y0 is None:
@@ -84,7 +111,7 @@ class imgblock_standard(object):
             rr = np.sqrt(xx**2 + yy**2)
             sma = np.sum(rr * image) / np.sum(image)
 
-        isolist = fit_ellipse(image, x0, y0, sma, eps, pa, **kwargs)
+        isolist = fit_ellipse(image.data, x0, y0, sma, eps, pa, **kwargs)
         self.isophotes[ext_name] = isolist
         return isolist
 
@@ -104,7 +131,11 @@ class imgblock_standard(object):
         isolist_out : IsophoteList
             New measurements.
         '''
-        image = self.get_extension(ext_name).data
+        ext = self.get_extension(ext_name)
+        if ext.mask is None:
+            image = ext.data
+        else:
+            image = np.ma.array(ext.data, mask=ext.mask)
         isolist_out = fit_isophote(image, isolist)
         self.isophotes[ext_name] = isolist_out
         return isolist_out
@@ -202,18 +233,15 @@ class imgblock_standard(object):
         ha2, va2 = sign_2_align(np.sign(d_arrow2))
 
         xy_e = (xy[0] - d_arrow1[0] * backextend, xy[1] - d_arrow1[1] * backextend)
-        print(xy_e)
         ax.annotate('E', xy=xy_e, xycoords='data', fontsize=fontsize,
                     xytext=(d_arrow1[0]+xy[0], d_arrow1[1]+xy[1]), color=color,
                     arrowprops=dict(color=color, arrowstyle="<-", lw=linewidth),
-                    ha=ha1, va=va1,
-                    )
+                    ha=ha1, va=va1)
         xy_n = (xy[0] - d_arrow2[0] * backextend, xy[1] - d_arrow2[1] * backextend)
         ax.annotate('N', xy=xy_n, xycoords='data', fontsize=fontsize,
                     xytext=(d_arrow2[0]+xy[0], d_arrow2[1]+xy[1]), color=color,
                     arrowprops=dict(color=color, arrowstyle="<-", lw=linewidth),
-                    ha=ha2, va=va2,
-                    )
+                    ha=ha2, va=va2)
 
     def plot_extension(self, ext_name, stretch='asinh', units='arcsec',
                        vmin=None, vmax=None, a=None, ax=None, plain=False,
@@ -246,9 +274,8 @@ class imgblock_standard(object):
         ax : matplotlib Axis
             Axis to plot the image.
         '''
-        extension = self.get_extension(ext_name)
-        ax = plot_image(extension.data, extension.wcs, stretch, units, vmin,
-                        vmax, a, ax, plain, **kwargs)
+        ext = self.get_extension(ext_name)
+        ax = plot_image(ext, ext.wcs, stretch, units, vmin, vmax, a, ax, plain, **kwargs)
         return ax
 
     def plot_ellipse(self, ext_name, ax=None, thin=1, **kwargs):
@@ -273,7 +300,8 @@ class imgblock_standard(object):
         return ax
 
     def plot_mu(self, ext_name, xscale='log', yscale='mag', pixelscale=None,
-                zeromag=None, ax=None, plain=False, show_error=True, **kwargs):
+                zeromag=None, ax=None, plain=False, show_error=True,
+                error_type='int_err', **kwargs):
         '''
         Plot surface brightness profile.
         '''
@@ -290,13 +318,18 @@ class imgblock_standard(object):
             pixelscale = self.pixelscale
 
         x = isolist.sma * pixelscale
+        if error_type == 'int_err':
+            e = isolist.int_err
+        elif error_type == 'rms':
+            e = isolist.rms
+        else:
+            raise KeyError('Cannot recognize the error type ({0})!'.format(error_type))
         if yscale == 'mag':
             if zeromag is None:
                 zeromag = self.zeromag
-            y, e = flux2mag(isolist.intens, isolist.int_err, zeromag)
+            y, e = flux2mag(isolist.intens, e, zeromag)
         else:
             y = isolist.intens
-            e = isolist.int_err
         if show_error is True:
             ax.errorbar(x, y, yerr=e, **kwargs)
         else:
@@ -315,6 +348,29 @@ class imgblock_standard(object):
                 ax.invert_yaxis()
         return ax
 
+    def remove_mask(self, ext_name):
+        '''
+        Remove the mask of the extension.
+        '''
+        self.extensions[ext_name][0].mask = None
+
+    def set_mask(self, ext_name, mask):
+        '''
+        Set mask for the extension.
+
+        Parameters
+        ----------
+        ext_name : string
+            The name of the extentsion.
+        mask : 2D array
+            The mask.
+        '''
+        if ext_name not in self.extensions:
+            raise ValueError('Cannot find {0} in the extensions!'.format(ext_name))
+
+        assert self.extensions[ext_name][0].shape == mask.shape, 'Mask shape incorrect!'
+        self.extensions[ext_name][0].mask = mask
+
     def __getitem__(self, key):
         '''
         Get the extension and tag.
@@ -325,6 +381,10 @@ class imgblock_standard(object):
             Name of extention.
         '''
         return self.extensions[key]
+
+    def __repr__(self):
+        ext_names = list(self.extensions.keys())
+        return 'Extensions: {0}'.format(', '.join(ext_names))
 
 
 class imgblock_subcomp(object):
@@ -383,6 +443,27 @@ class imgblock_subcomp(object):
             self.extensions[ext_name] = (ext, tag)
         return ext
 
+    def cut_fov(self, position, size):
+        '''
+        Cut the field of view.
+
+        Parameters
+        ----------
+        position : (x, y)
+            Position of the image center, units: pixel.
+        size : (dx, dy)
+            Size of the new image, units: pixel.
+        '''
+        for loop, ext_name in enumerate(self.extensions):
+            ext, tag = self.extensions[ext_name]
+            img_cut = Cutout2D(ext.data, position=position, size=size).data
+            if ext.mask is not None:
+                mask = Cutout2D(ext.mask, position=position, size=size).data
+            else:
+                mask = None
+            ccd_new = CCDData(img_cut, wcs=ext.wcs, mask=mask, unit=ext.unit)
+            self.extensions[ext_name] = [ccd_new, tag]
+
     def fit_ellipse(self, ext_name, x0=None, y0=None, sma=None, eps=0, pa=0,
                     **kwargs):
         '''
@@ -416,7 +497,12 @@ class imgblock_subcomp(object):
             A list-like object of Isophote instances, sorted by increasing
             semimajor axis length.
         '''
-        image = self.get_extension(ext_name).data
+        ext = self.get_extension(ext_name)
+        if ext.mask is None:
+            image = ext.data
+        else:
+            image = np.ma.array(ext.data, mask=ext.mask)
+
         if x0 is None:
             x0 = image.shape[1] / 2
         if y0 is None:
@@ -449,7 +535,11 @@ class imgblock_subcomp(object):
         isolist_out : IsophoteList
             New measurements.
         '''
-        image = self.get_extension(ext_name).data
+        ext = self.get_extension(ext_name)
+        if ext.mask is None:
+            image = ext.data
+        else:
+            image = np.ma.array(ext.data, mask=ext.mask)
         isolist_out = fit_isophote(image, isolist)
         self.isophotes[ext_name] = isolist_out
         return isolist_out
@@ -465,6 +555,14 @@ class imgblock_subcomp(object):
         Get the extension data.
         '''
         return self.extensions[ext_name][0]
+
+    def get_model_param(self, ext_name, parname):
+        '''
+        Get model parameter value.
+        '''
+        idx = list(self.extensions.keys()).index(ext_name) + 1
+        info = self.model_info['COMP_{0}'.format(idx)]
+        return info.get('{0}_{1}'.format(idx, parname))
 
     def get_isolist(self, ext_name):
         '''
@@ -509,9 +607,8 @@ class imgblock_subcomp(object):
         ax : matplotlib Axis
             Axis to plot the image.
         '''
-        extenstion = self.get_extension(ext_name)
-        ax = plot_image(extenstion.data, extenstion.wcs, stretch, units, vmin,
-                        vmax, a, ax, plain, **kwargs)
+        ext = self.get_extension(ext_name)
+        ax = plot_image(ext, ext.wcs, stretch, units, vmin, vmax, a, ax, plain, **kwargs)
         return ax
 
     def plot_extension_all(self, stretch='asinh', units='arcsec', vmin=None,
@@ -593,6 +690,29 @@ class imgblock_subcomp(object):
                 ax.invert_yaxis()
         return ax
 
+    def remove_mask(self, ext_name):
+        '''
+        Remove the mask of the extension.
+        '''
+        self.extensions[ext_name][0].mask = None
+
+    def set_mask(self, ext_name, mask):
+        '''
+        Set mask for the extension.
+
+        Parameters
+        ----------
+        ext_name : string
+            The name of the extentsion.
+        mask : 2D array
+            The mask.
+        '''
+        if ext_name not in self.extensions:
+            raise ValueError('Cannot find {0} in the extensions!'.format(ext_name))
+
+        assert self.extensions[ext_name][0].shape == mask.shape, 'Mask shape incorrect!'
+        self.extensions[ext_name][0].mask = mask
+
     def set_tag(self, ext_name, tag):
         '''
         Set the tag.
@@ -609,3 +729,7 @@ class imgblock_subcomp(object):
             Name of extention.
         '''
         return self.extensions[key]
+
+    def __repr__(self):
+        ext_names = list(self.extensions.keys())
+        return 'Extensions: {0}'.format(', '.join(ext_names))
