@@ -1,8 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from astropy import units as u
 from astropy.io import fits
 from astropy.nddata import CCDData
 from astropy.nddata import Cutout2D
+from astropy.wcs import WCS
 from .utils import *
 
 
@@ -13,7 +15,7 @@ class imgblock_standard(object):
     GALFIT standard output.  E.g., output from
         `galfit -o2 <file> (standard img. block)`
     '''
-    def __init__(self, filename, zeromag=None, pixelscale=None, unit=None):
+    def __init__(self, filename, zeromag=None, pixelscale=None, exptime=None, unit=None):
         '''
         Parameters
         ----------
@@ -35,8 +37,11 @@ class imgblock_standard(object):
             'residual': [CCDData.read(filename, hdu=3, unit=unit), None]
         }
         if pixelscale is None:
-            pixelscale = self.get_pixelscale(units='arcsec')
+            pixelscale = self.get_pixelscale_wcs(units='arcsec')
         self.pixelscale = pixelscale
+        if exptime is None:
+            exptime = header.get('EXPTIME', None)
+        self.exptime = exptime
         self.isophotes = {}
 
     def cut_fov(self, position, size):
@@ -52,16 +57,26 @@ class imgblock_standard(object):
         '''
         for loop, ext_name in enumerate(self.extensions):
             ext, tag = self.extensions[ext_name]
-            img_cut = Cutout2D(ext.data, position=position, size=size).data
+            img_cut = Cutout2D(ext.data, position=position, size=size)
+            if ext.wcs is not None:
+                header = ext.wcs.to_header()
+                crpix_org = [header['CRPIX1'], header['CRPIX2']]
+                crpix_new = img_cut.to_cutout_position(crpix_org)
+                header['CRPIX1'] = crpix_new[0]
+                header['CRPIX2'] = crpix_new[1]
+                wcs = WCS(header)
+            else:
+                wcs = None
+
             if ext.mask is not None:
                 mask = Cutout2D(ext.mask, position=position, size=size).data
             else:
                 mask = None
-            ccd_new = CCDData(img_cut, wcs=ext.wcs, mask=mask, unit=ext.unit)
+            ccd_new = CCDData(img_cut.data, wcs=wcs, mask=mask, unit=ext.unit)
             self.extensions[ext_name] = [ccd_new, tag]
 
     def fit_ellipse(self, ext_name, x0=None, y0=None, sma=None, eps=0, pa=0,
-                    **kwargs):
+                    expand=False, **kwargs):
         '''
         Fit isophotes of an extension.
 
@@ -111,7 +126,16 @@ class imgblock_standard(object):
             rr = np.sqrt(xx**2 + yy**2)
             sma = np.sum(rr * image) / np.sum(image)
 
-        isolist = fit_ellipse(image.data, x0, y0, sma, eps, pa, **kwargs)
+        isolist = fit_ellipse(image, x0, y0, sma, eps, pa, **kwargs)
+
+        if expand is True:
+            step = kwargs.get('step', 0.1)
+            fflag = kwargs.get('fflag', 0.7)
+            maxsma = kwargs.get('maxsma', None)
+            isolist_exp = grow_isophote(image, isolist[-1], step=step, fflag=fflag,
+                                        maxsma=maxsma, maxsteps=np.inf)
+            isolist = isolist + isolist_exp
+
         self.isophotes[ext_name] = isolist
         return isolist
 
@@ -140,6 +164,13 @@ class imgblock_standard(object):
         self.isophotes[ext_name] = isolist_out
         return isolist_out
 
+    def get_CRPIX(self):
+        '''
+        Get the reference pixel.
+        '''
+        header = self.extensions['data'][0].wcs.to_header()
+        return (header['CRPIX1'], header['CRPIX2'])
+
     def get_extension(self, ext_name):
         '''
         Get the extension data.
@@ -156,18 +187,54 @@ class imgblock_standard(object):
             Units of the pixel scale.
         '''
         data = self.get_extension('data')
-        cdelt1, cdelt2 = wcs_pixel_scale(data.wcs)
         nrow, ncol = data.shape
-        x_len = ncol * cdelt1.to(units).value
-        y_len = nrow * cdelt2.to(units).value
+        x_len = ncol * self.get_pixelscale(units)
+        y_len = nrow * self.get_pixelscale(units)
         extent = (-x_len/2, x_len/2, -y_len/2, y_len/2)
         return extent
+
+    def get_ImageCenter(self):
+        '''
+        Get the central pixel of the image.
+
+        BE CAREFUL:
+            For values exactly halfway between rounded decimal values, NumPy
+            rounds to the nearest even value. Thus 1.5 and 2.5 round to 2.0,
+            -0.5 and 0.5 round to 0.0, etc.
+        '''
+        image = self.get_extension('data').data
+        xcent = np.around(image.shape[1]/2.0, decimals=0)
+        ycent = np.around(image.shape[0]/2.0, decimals=0)
+        return (xcent, ycent)
 
     def get_isolist(self, ext_name):
         '''
         Get isolist of an extension.
         '''
         return self.isophotes[ext_name]
+
+    def get_mu(self, ext_name, pixelscale=None, exptime=None, zeromag=None):
+        '''
+        Get the surface brightness.
+        '''
+        isolist = self.isophotes.get(ext_name, None)
+        if isolist is None:
+            raise KeyError('Cannot find isolist for {0}!'.format(ext_name))
+        if pixelscale is None:
+            assert self.pixelscale is not None
+            pixelscale = self.pixelscale
+        if exptime is None:
+            assert self.exptime is not None
+            exptime = self.exptime
+        if zeromag is None:
+            assert self.zeromag is not None
+            zeromag = self.zeromag
+
+        x = isolist.sma * pixelscale
+        y = isolist.intens / exptime / pixelscale**2
+        e = isolist.int_err / exptime / pixelscale**2
+        y, e = flux2mag(y, e, zeromag)
+        return x, y, e
 
     def get_tag(self, ext_name):
         '''
@@ -179,6 +246,14 @@ class imgblock_standard(object):
         '''
         Get pixel scale of the data image.
         '''
+        ps_arcsec = self.pixelscale * u.arcsec
+        ps_out = ps_arcsec.to(units).value
+        return ps_out
+
+    def get_pixelscale_wcs(self, units='arcsec'):
+        '''
+        Get pixel scale of the data image from WCS.
+        '''
         cdelt1, cdelt2 = wcs_pixel_scale(self.get_extension('data').wcs)
         cdelt1 = cdelt1.to(units).value
         cdelt2 = cdelt2.to(units).value
@@ -187,8 +262,42 @@ class imgblock_standard(object):
         ps = (cdelt1 + cdelt2) / 2
         return ps
 
-    def plot_direction(self, ax, xy, length, color='k', fontsize=20, linewidth=2,
-                       units='arcsec', backextend=0.05):
+    def grow_isophote(self, ext_name, isophote, step=0.1, fflag=0.7, maxsma=None,
+                      maxsteps=1000):
+        '''
+        Fit the isophote of the extension starting from the input isophote and
+        use its shape fixed.
+
+        Parameters
+        ----------
+        ext_name : string
+            The name of the extension.
+        isophote : photutils.isophote.Isophote
+            The isophote to be expanded.
+        step : float (default: 0.1)
+            The step value for growing/shrinking the semimajor axis.
+        fflag : float (default: 0.7)
+            The acceptable fraction of flagged data points in the
+            sample.  If the actual fraction of valid data points is
+            smaller than this, the iterations will stop.  Flagged
+            data points are points that either lie outside the image
+            frame, are masked, or were rejected by sigma-clipping.
+        maxsma (optional) : float
+            Maximum semimajor axis length, units: pixel.
+        maxsteps : int (default: 1000)
+            Maximum steps to grow the isophote.
+        '''
+        ext = self.get_extension(ext_name)
+        if ext.mask is None:
+            image = ext.data
+        else:
+            image = np.ma.array(ext.data, mask=ext.mask)
+        isolist = grow_isophote(image, isophote, step=step, fflag=fflag,
+                                maxsma=maxsma, maxsteps=maxsteps)
+        return isolist
+
+    def plot_direction(self, ax, xy, len_E=None, len_N=None, color='k', fontsize=20,
+                       linewidth=2, frac_len=0.15, units='arcsec', backextend=0.05):
         '''
         Plot the direction arrow. Only applied to plots using WCS.
 
@@ -199,22 +308,31 @@ class imgblock_standard(object):
         xy : (x, y)
             Coordinate of the origin of the arrows.
         length : float
-            Length of the arrows.
+            Length of the arrows, units: pixel.
         units: string (default: arcsec)
-            Units of xy and length.
+            Units of xy.
         '''
+        xlim = ax.get_xlim()
+        len_total = np.abs(xlim[1] - xlim[0])
+        pixelscale = self.get_pixelscale(units)
+        if len_E is None:
+            len_E = len_total * frac_len / pixelscale
+        if len_N is None:
+            len_N = len_total * frac_len / pixelscale
+
         wcs = self.extensions['data'][0].wcs
         header = wcs.to_header()
-        pixelscale = self.get_pixelscale(units)
-        d_ra = length / pixelscale * self.get_pixelscale('degree')
-        d_dec = length / pixelscale * self.get_pixelscale('degree')
+        d_ra = len_E * self.get_pixelscale('degree')
+        d_dec = len_N * self.get_pixelscale('degree')
         ra = [header['CRVAL1'], header['CRVAL1']+d_ra, header['CRVAL1']]
         dec = [header['CRVAL2'], header['CRVAL2'], header['CRVAL2']+d_dec]
         ra_pix, dec_pix = wcs.all_world2pix(ra, dec, 1)
         d_arrow1 = [ra_pix[1]-ra_pix[0], dec_pix[1]-dec_pix[0]]
         d_arrow2 = [ra_pix[2]-ra_pix[0], dec_pix[2]-dec_pix[0]]
-        d_arrow1 = np.array(d_arrow1) * pixelscale
-        d_arrow2 = np.array(d_arrow2) * pixelscale
+        l_arrow1 = np.sqrt(d_arrow1[0]**2 + d_arrow1[1]**2)
+        l_arrow2 = np.sqrt(d_arrow2[0]**2 + d_arrow2[1]**2)
+        d_arrow1 = np.array(d_arrow1) / l_arrow1 * len_E * pixelscale
+        d_arrow2 = np.array(d_arrow2) / l_arrow2 * len_N * pixelscale
 
         def sign_2_align(sign):
             '''
@@ -300,45 +418,36 @@ class imgblock_standard(object):
         return ax
 
     def plot_mu(self, ext_name, xscale='log', yscale='mag', pixelscale=None,
-                zeromag=None, ax=None, plain=False, show_error=True,
+                zeromag=None, exptime=None, ax=None, plain=False, show_error=True,
                 error_type='int_err', **kwargs):
         '''
         Plot surface brightness profile.
         '''
-        # Get the isophotal list
-        isolist = self.isophotes.get(ext_name, None)
-        if isolist is None:
-            raise KeyError('Cannot find isolist for {0}!'.format(ext_name))
+        if yscale == 'mag':
+            x, y, e = self.get_mu(ext_name, pixelscale=pixelscale, exptime=exptime,
+                                  zeromag=zeromag)
+        else:
+            isolist = self.isophotes.get(ext_name, None)
+            if isolist is None:
+                raise KeyError('Cannot find isolist for {0}!'.format(ext_name))
+            x = isolist.sma
+            y = isolist.intens
+            e = isolist.int_err
 
         # Plot
         if ax is None:
             plt.figure(figsize=(7, 7))
             ax = plt.gca()
-        if pixelscale is None:
-            pixelscale = self.pixelscale
-
-        x = isolist.sma * pixelscale
-        if error_type == 'int_err':
-            e = isolist.int_err
-        elif error_type == 'rms':
-            e = isolist.rms
-        else:
-            raise KeyError('Cannot recognize the error type ({0})!'.format(error_type))
-        if yscale == 'mag':
-            if zeromag is None:
-                zeromag = self.zeromag
-            y, e = flux2mag(isolist.intens, e, zeromag)
-        else:
-            y = isolist.intens
         if show_error is True:
             ax.errorbar(x, y, yerr=e, **kwargs)
         else:
             ax.plot(x, y, **kwargs)
         if plain is False:
-            ax.set_xlabel(r'Radius (arcsec)', fontsize=24)
             if yscale == 'mag':
+                ax.set_xlabel(r'Radius (arcsec)', fontsize=24)
                 ax.set_ylabel(r'$\mu\,(\mathrm{mag\,arcsec^{-2}})$', fontsize=24)
             else:
+                ax.set_xlabel(r'Radius (pixel)', fontsize=24)
                 ax.set_ylabel(r'Flux ({0} per pixel)'.format(self.unit), fontsize=24)
             ax.minorticks_on()
             ax.set_xscale(xscale)
@@ -384,7 +493,10 @@ class imgblock_standard(object):
 
     def __repr__(self):
         ext_names = list(self.extensions.keys())
-        return 'Extensions: {0}'.format(', '.join(ext_names))
+        image = self.get_extension(self.get_ext_names()[0])
+        info1 = 'Extensions: {0}'.format(', '.join(ext_names))
+        info2 = 'Image size: {0}x{1}'.format(image.shape[1], image.shape[0])
+        return '\n'.join([info1, info2])
 
 
 class imgblock_subcomp(object):
@@ -392,7 +504,7 @@ class imgblock_subcomp(object):
     GALFIT subcomponent output.  E.g., output from
         `galfit -o3 <file> (standard img. block)`
     '''
-    def __init__(self, filename, unit='adu'):
+    def __init__(self, filename, zeromag=None, pixelscale=None, exptime=None, unit='adu'):
         '''
         Parameters
         ----------
@@ -403,6 +515,9 @@ class imgblock_subcomp(object):
         header = f[1].header
         self.model_info = get_model_from_header(header)
         self.unit = unit
+        self.zeromag = zeromag
+        self.pixelscale = pixelscale
+        self.exptime = exptime
 
         self.extensions = {}
         for loop in range(self.model_info['N_components']):
@@ -564,6 +679,29 @@ class imgblock_subcomp(object):
         info = self.model_info['COMP_{0}'.format(idx)]
         return info.get('{0}_{1}'.format(idx, parname))
 
+    def get_mu(self, ext_name, pixelscale=None, exptime=None, zeromag=None):
+        '''
+        Get the surface brightness.
+        '''
+        isolist = self.isophotes.get(ext_name, None)
+        if isolist is None:
+            raise KeyError('Cannot find isolist for {0}!'.format(ext_name))
+        if pixelscale is None:
+            assert self.pixelscale is not None
+            pixelscale = self.pixelscale
+        if exptime is None:
+            assert self.exptime is not None
+            exptime = self.exptime
+        if zeromag is None:
+            assert self.zeromag is not None
+            zeromag = self.zeromag
+
+        x = isolist.sma * pixelscale
+        y = isolist.intens / exptime / pixelscale**2
+        e = isolist.int_err / exptime / pixelscale**2
+        y, e = flux2mag(y, e, zeromag)
+        return x, y, e
+
     def get_isolist(self, ext_name):
         '''
         Get isolist of an extension.
@@ -651,37 +789,33 @@ class imgblock_subcomp(object):
         return ax
 
     def plot_mu(self, ext_name, xscale='log', yscale='mag', pixelscale=None,
-                zeromag=None, ax=None, plain=False, **kwargs):
+                zeromag=None, exptime=None, ax=None, plain=False, **kwargs):
         '''
         Plot surface brightness profile.
         '''
-        # Get the isophotal list
-        isolist = self.isophotes.get(ext_name, None)
-        if isolist is None:
-            raise KeyError('Cannot find isolist for {0}!'.format(ext_name))
+        if yscale == 'mag':
+            x, y, e = self.get_mu(ext_name, pixelscale=pixelscale, exptime=exptime,
+                                  zeromag=zeromag)
+        else:
+            isolist = self.isophotes.get(ext_name, None)
+            if isolist is None:
+                raise KeyError('Cannot find isolist for {0}!'.format(ext_name))
+            x = isolist.sma
+            y = isolist.intens
+            e = isolist.int_err
 
         # Plot
         if ax is None:
             plt.figure(figsize=(7, 7))
             ax = plt.gca()
-        if pixelscale is None:
-            pixelscale = self.pixelscale
-
-        x = isolist.sma * pixelscale
-        if yscale == 'mag':
-            if zeromag is None:
-                zeromag = self.zeromag
-            y, e = flux2mag(isolist.intens, isolist.int_err, zeromag)
-        else:
-            y = isolist.intens
-            e = isolist.int_err
         ax.plot(x, y, **kwargs)
         if plain is False:
-            ax.set_xlabel(r'Radius (arcsec)', fontsize=24)
             if yscale == 'mag':
+                ax.set_xlabel(r'Radius (arcsec)', fontsize=24)
                 ax.set_ylabel(r'$\mu\,(\mathrm{mag\,arcsec^{-2}})$', fontsize=24)
             else:
-                ax.set_ylabel(r'Flux ({0} per pixel)'.format(self.units), fontsize=24)
+                ax.set_xlabel(r'Radius (pixel)', fontsize=24)
+                ax.set_ylabel(r'Flux ({0} per pixel)'.format(self.unit), fontsize=24)
             ax.minorticks_on()
             ax.set_xscale(xscale)
             if yscale != 'mag':
@@ -732,4 +866,7 @@ class imgblock_subcomp(object):
 
     def __repr__(self):
         ext_names = list(self.extensions.keys())
-        return 'Extensions: {0}'.format(', '.join(ext_names))
+        image = self.get_extension(self.get_ext_names()[0])
+        info1 = 'Extensions: {0}'.format(', '.join(ext_names))
+        info2 = 'Image size: {0}x{1}'.format(image.shape[1], image.shape[0])
+        return '\n'.join([info1, info2])

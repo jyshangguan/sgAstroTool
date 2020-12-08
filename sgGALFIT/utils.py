@@ -126,6 +126,11 @@ def convert_output_string2float(s):
         v = float(s[1:-1])
         ve = None
         f = 'fixed'
+    elif '*' in s:
+        v_list = s.split('+/-')
+        v = float(v_list[0].replace('*', ''))
+        ve = float(v_list[1].replace('*', ''))
+        f = 'warning'
     elif '+/-' in s:
         v_list = s.split('+/-')
         v = float(v_list[0])
