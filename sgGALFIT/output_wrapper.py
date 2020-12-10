@@ -119,12 +119,13 @@ class imgblock_standard(object):
         if y0 is None:
             y0 = image.shape[0] / 2
         if sma is None:
-            # Estimate the size of the source
-            xx, yy = np.meshgrid(np.arange(image.shape[1]), np.arange(image.shape[0]))
-            xx = xx.astype(np.float64) - x0
-            yy = yy.astype(np.float64) - y0
-            rr = np.sqrt(xx**2 + yy**2)
-            sma = np.sum(rr * image) / np.sum(image)
+            ## Estimate the size of the source
+            #xx, yy = np.meshgrid(np.arange(image.shape[1]), np.arange(image.shape[0]))
+            #xx = xx.astype(np.float64) - x0
+            #yy = yy.astype(np.float64) - y0
+            #rr = np.sqrt(xx**2 + yy**2)
+            #sma = np.sum(rr * image) / np.sum(image)
+            sma = 10
 
         isolist = fit_ellipse(image, x0, y0, sma, eps, pa, **kwargs)
 
@@ -580,7 +581,7 @@ class imgblock_subcomp(object):
             self.extensions[ext_name] = [ccd_new, tag]
 
     def fit_ellipse(self, ext_name, x0=None, y0=None, sma=None, eps=0, pa=0,
-                    **kwargs):
+                    expand=False, **kwargs):
         '''
         Fit isophotes of an extension.
 
@@ -623,14 +624,24 @@ class imgblock_subcomp(object):
         if y0 is None:
             y0 = image.shape[0] / 2
         if sma is None:
-            # Estimate the size of the source
-            xx, yy = np.meshgrid(np.arange(image.shape[1]), np.arange(image.shape[0]))
-            xx = xx.astype(np.float64) - x0
-            yy = yy.astype(np.float64) - y0
-            rr = np.sqrt(xx**2 + yy**2)
-            sma = np.sum(rr * image) / np.sum(image)
+            ## Estimate the size of the source
+            #xx, yy = np.meshgrid(np.arange(image.shape[1]), np.arange(image.shape[0]))
+            #xx = xx.astype(np.float64) - x0
+            #yy = yy.astype(np.float64) - y0
+            #rr = np.sqrt(xx**2 + yy**2)
+            #sma = np.sum(rr * image) / np.sum(image)
+            sma = 10
 
         isolist = fit_ellipse(image, x0, y0, sma, eps, pa, **kwargs)
+
+        if expand is True:
+            step = kwargs.get('step', 0.1)
+            fflag = kwargs.get('fflag', 0.7)
+            maxsma = kwargs.get('maxsma', None)
+            isolist_exp = grow_isophote(image, isolist[-1], step=step, fflag=fflag,
+                                        maxsma=maxsma, maxsteps=np.inf)
+            isolist = isolist + isolist_exp
+
         self.isophotes[ext_name] = isolist
         return isolist
 
