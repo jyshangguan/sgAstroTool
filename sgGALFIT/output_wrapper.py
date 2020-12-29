@@ -15,7 +15,8 @@ class imgblock_standard(object):
     GALFIT standard output.  E.g., output from
         `galfit -o2 <file> (standard img. block)`
     '''
-    def __init__(self, filename, zeromag=None, pixelscale=None, exptime=None, unit=None):
+    def __init__(self, filename, zeromag=None, pixelscale=None, exptime=None,
+                 sigmasky=None, unit=None):
         '''
         Parameters
         ----------
@@ -26,6 +27,7 @@ class imgblock_standard(object):
         header = f[1].header
         self.model_info = get_model_from_header(header)
         self.zeromag = zeromag
+        self.sigmasky = sigmasky
 
         if unit is None:
             unit = convert_unit_hst2astropy(header.get('BUNIT'))
@@ -214,7 +216,7 @@ class imgblock_standard(object):
         '''
         return self.isophotes[ext_name]
 
-    def get_mu(self, ext_name, pixelscale=None, exptime=None, zeromag=None):
+    def get_mu(self, ext_name, pixelscale=None, exptime=None, zeromag=None, sigmasky=None):
         '''
         Get the surface brightness.
         '''
@@ -230,10 +232,15 @@ class imgblock_standard(object):
         if zeromag is None:
             assert self.zeromag is not None
             zeromag = self.zeromag
+        if sigmasky is None:
+            if self.sigmasky is None:
+                sigmasky = 0
+            else:
+                sigmasky = self.sigmasky
 
         x = isolist.sma * pixelscale
         y = isolist.intens / exptime / pixelscale**2
-        e = isolist.int_err / exptime / pixelscale**2
+        e = np.sqrt(isolist.int_err**2 + sigmasky**2) / exptime / pixelscale**2
         y, e = flux2mag(y, e, zeromag)
         return x, y, e
 
