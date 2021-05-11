@@ -18,7 +18,7 @@ flux_temp = irontemp['Intensity'].data
 @custom_model
 def IronTemplate(x, amplitude=1, stddev=400, z=0):
     '''
-    This is a Fe template of AGN from I Zw 1.
+    This is a Fe template of AGN from I Zw 1 (Boroson & Green 1992).
 
     Parameters
     ----------
