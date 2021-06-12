@@ -1,9 +1,12 @@
 import numpy as np
 from astropy.modeling import models, fitting
+from astropy.modeling.models import custom_model
 from scipy.optimize import minimize
+import extinction
 ls_km = 2.99792458e5  # km/s
 
-__all__ = ['gen_hbo3', 'add_hbo3', 'find_line_peak', 'line_fwhm']
+__all__ = ['gen_hbo3', 'add_hbo3', 'find_line_peak', 'line_fwhm',
+           'extinction_ccm89']
 
 Hbeta = 4862.721
 OIII_4959 = 4960.295
@@ -189,6 +192,29 @@ def line_fwhm(model, x0, x1, x0_limit=None, x1_limit=None, fwhm_disp=None):
 
     fwhm = fwhm_w / w_peak * ls_km
     return fwhm, w_l, w_r, w_peak
+
+@custom_model
+def extinction_ccm89(x, a_v=0, r_v=3.1):
+    '''
+    The extinction model of Cardelli et al. (1989).
+
+    Parameters
+    ----------
+    x : array like
+        Wavelength, units: Angstrom.
+    a_v : float
+        Scaling parameter, A_V: extinction in magnitudes at characteristic
+        V-band wavelength.
+    r_v : float
+        Ratio of total to selective extinction, A_V / E(B-V).
+
+    Returns
+    -------
+    f : array like
+        The fraction of out emitting flux.
+    '''
+    f =10**(-0.4 * extinction.ccm89(x, a_v, r_v))
+    return f
 
 # Tie parameters
 str_tie_ampl_4959W = '''
