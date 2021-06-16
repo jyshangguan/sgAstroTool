@@ -45,16 +45,18 @@ def gen_hbo3(z=0.001, amp_hb=1, amp_o5007=1, stddev_o5007=1, wave_o5007=None,
     name_o31 = '[OIII]5007 C'
     name_o32 = '[OIII]4959 C'
     name_hb = 'Hbeta NC'
-    m_init[name_o32].amplitude.tied = tie_ampl_4959C
-    m_init[name_o32].stddev.tied = tie_std_4959C
-    m_init[name_o32].mean.tied = tie_wave_4959C
-    m_init[name_hb].stddev.tied = tie_std_hbNC
-    m_init[name_hb].mean.tied = tie_wave_hbNC
+    m_init[name_o32].amplitude.tied = tier_line_ratio(name_o32, name_o31, r_OIII)
+    m_init[name_o32].stddev.tied = tier_line_width(name_o32, name_o31)
+    m_init[name_o32].mean.tied = tier_line_center(name_o32, name_o31, OIII_4959, OIII_5007)
+    m_init[name_hb].stddev.tied = tier_line_width(name_hb, name_o31)
+    m_init[name_hb].mean.tied = tier_line_center(name_hb, name_o31, Hbeta, OIII_5007)
+
 
     m_init = add_hbo3(m_init, amp_o5007_list, std_o5007_list, wav_o5007_list,
                  nwind, stddev_bounds, scale_down)
 
     return m_init
+
 
 def add_hbo3(model, amp_o5007_list=None, std_o5007_list=None, wav_o5007_list=None,
              nwind=0, stddev_bounds=(TOLERANCE, 500), scale_down=10):
@@ -101,21 +103,15 @@ def add_hbo3(model, amp_o5007_list=None, std_o5007_list=None, wav_o5007_list=Non
         model += models.Gaussian1D(name=name_o32w, bounds=bounds)
         model += models.Gaussian1D(name=name_hbw, bounds=bounds)
 
-        exec(str_tie_ampl_4959W.format(model_index))
-        exec(str_tie_std_4959W.format(model_index))
-        exec(str_tie_wave_4959W.format(model_index))
-        exec(str_tie_ampl_hbNW.format(model_index))
-        exec(str_tie_std_hbNW.format(model_index))
-        exec(str_tie_wave_hbNW.format(model_index))
-
-        exec('''model['[OIII]4959 W{0}'].amplitude.tied = tie_ampl_4959W{0}'''.format(model_index))
-        exec('''model['[OIII]4959 W{0}'].stddev.tied = tie_std_4959W{0}'''.format(model_index))
-        exec('''model['[OIII]4959 W{0}'].mean.tied = tie_wave_4959W{0}'''.format(model_index))
-        exec('''model['Hbeta NW{0}'].amplitude.tied = tie_ampl_hbNW{0}'''.format(model_index))
-        exec('''model['Hbeta NW{0}'].stddev.tied = tie_std_hbNW{0}'''.format(model_index))
-        exec('''model['Hbeta NW{0}'].mean.tied = tie_wave_hbNW{0}'''.format(model_index))
+        model[name_o32w].amplitude.tied = tier_line_ratio(name_o32w, name_o31w, r_OIII)
+        model[name_o32w].stddev.tied = tier_line_width(name_o32w, name_o31w)
+        model[name_o32w].mean.tied = tier_line_center(name_o32w, name_o31w, OIII_4959, OIII_5007)
+        model[name_hbw].amplitude.tied = tier_line_ratio(name_hbw, 'Hbeta NC', ratio_names=[name_o31w, '[OIII]5007 C'])
+        model[name_hbw].stddev.tied = tier_line_width(name_hbw, name_o31w)
+        model[name_hbw].mean.tied = tier_line_center(name_hbw, name_o31w, Hbeta, OIII_5007)
 
     return model
+
 
 def find_line_peak(model, x0):
     '''
@@ -141,6 +137,7 @@ def find_line_peak(model, x0):
     except:
         f_peak = model(w_peak)
     return w_peak, f_peak
+
 
 def line_fwhm(model, x0, x1, x0_limit=None, x1_limit=None, fwhm_disp=None):
     '''
@@ -193,6 +190,7 @@ def line_fwhm(model, x0, x1, x0_limit=None, x1_limit=None, fwhm_disp=None):
     fwhm = fwhm_w / w_peak * ls_km
     return fwhm, w_l, w_r, w_peak
 
+
 @custom_model
 def extinction_ccm89(x, a_v=0, r_v=3.1):
     '''
@@ -216,49 +214,62 @@ def extinction_ccm89(x, a_v=0, r_v=3.1):
     f =10**(-0.4 * extinction.ccm89(x, a_v, r_v))
     return f
 
+
 # Tie parameters
-str_tie_ampl_4959W = '''
-def tie_ampl_4959W{0}(model):
-    return model['[OIII]5007 W{0}'].amplitude.value / r_OIII
-'''
+class tier_line_ratio(object):
 
-str_tie_std_4959W = '''
-def tie_std_4959W{0}(model):
-    return model['[OIII]5007 W{0}'].stddev.value / model['[OIII]5007 W{0}'].mean.value * model['[OIII]4959 W{0}'].mean.value
-'''
+    def __init__(self, name_fit, name_ref, ratio=None, ratio_names=None):
 
-str_tie_wave_4959W = '''
-def tie_wave_4959W{0}(model):
-    return OIII_4959 * (model['[OIII]5007 W{0}'].mean.value / OIII_5007)
-'''
+        self._name_fit = name_fit
+        self._name_ref = name_ref
+        self._ratio = ratio
+        self._ratio_names = ratio_names
 
-str_tie_ampl_hbNW = '''
-def tie_ampl_hbNW{0}(model):
-    r = model['[OIII]5007 W{0}'].amplitude.value / model['[OIII]5007 C'].amplitude.value
-    return r * model['Hbeta NC'].amplitude.value
-'''
+        if ((self._ratio is None) and (self._ratio_names is None)):
+            raise keyError('Need to provide ratio or _ratio_names!')
+        elif ((self._ratio is not None) and (self._ratio_names is not None)):
+            raise keyError('Cannot set both ratio and _ratio_names!')
 
-str_tie_std_hbNW = '''
-def tie_std_hbNW{0}(model):
-    return model['[OIII]5007 W{0}'].stddev.value / model['[OIII]5007 W{0}'].mean.value * model['Hbeta NW{0}'].mean.value
-'''
+    def __repr__(self):
 
-str_tie_wave_hbNW = '''
-def tie_wave_hbNW{0}(model):
-    return Hbeta * (model['[OIII]5007 W{0}'].mean.value / OIII_5007)
-'''
+        if self._ratio is not None:
+            return "<Set the amplitude of '{0}' to 1/{1} that of '{2}'>".format(self._name_fit, self._ratio, self._name_ref)
+        else:
+            return "<Set the amplitude of '{0}' according to '{1}' x '{2[0]}'/'{2[1]}'>".format(self._name_fit, self._name_ref, self._ratio_names)
 
-def tie_ampl_4959C(model):
-    return model['[OIII]5007 C'].amplitude.value / r_OIII
+    def __call__(self, model):
 
-def tie_std_4959C(model):
-    return model['[OIII]5007 C'].stddev.value / model['[OIII]5007 C'].mean.value * model['[OIII]4959 C'].mean.value
+        if self._ratio is not None:
+            r = 1 / self._ratio
+        else:
+            r = model[self._ratio_names[0]].amplitude.value / model[self._ratio_names[1]].amplitude.value
 
-def tie_wave_4959C(model):
-    return OIII_4959 * (model['[OIII]5007 C'].mean.value / OIII_5007)
+        return model[self._name_ref].amplitude.value * r
 
-def tie_std_hbNC(model):
-    return model['[OIII]5007 C'].stddev.value / model['[OIII]5007 C'].mean.value * model['Hbeta NC'].mean.value
 
-def tie_wave_hbNC(model):
-    return Hbeta * (model['[OIII]5007 C'].mean.value / OIII_5007)
+class tier_line_width(object):
+
+    def __init__(self, name_fit, name_ref):
+        self._name_fit = name_fit
+        self._name_ref = name_ref
+
+    def __repr__(self):
+        return "<Set the line width of '{0}' the same as that of '{1}'>".format(self._name_fit, self._name_ref)
+
+    def __call__(self, model):
+        return model[self._name_ref].stddev.value / model[self._name_ref].mean.value * model[self._name_fit].mean.value
+
+
+class tier_line_center(object):
+
+    def __init__(self, name_fit, name_ref, wavec_fit, wavec_ref):
+        self._name_fit = name_fit
+        self._name_ref = name_ref
+        self._wavec_fit = wavec_fit
+        self._wavec_ref = wavec_ref
+
+    def __repr__(self):
+        return "<Set the line center of '{0}' ({2}) according to that of '{1}' ({3})>".format(self._name_fit, self._name_ref, self._wavec_fit, self._wavec_ref)
+
+    def __call__(self, model):
+        return self._wavec_fit / self._wavec_ref * model[self._name_ref].mean.value
