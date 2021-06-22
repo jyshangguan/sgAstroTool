@@ -27,7 +27,7 @@ def IronTemplate(x, amplitude=1, stddev=400, z=0):
     amplitude : float
         Amplitude of the template, units: arbitrary.
     stddev : float
-        Velocity dispersion of the AGN, units: km/s.
+        Velocity dispersion of the AGN, units: km/s. Lower limit about 390 km/s.
     z : float
         Redshift of the AGN.
 
