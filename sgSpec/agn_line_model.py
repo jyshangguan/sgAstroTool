@@ -5,8 +5,11 @@ from scipy.optimize import minimize
 import extinction
 ls_km = 2.99792458e5  # km/s
 
-__all__ = ['Line_Gaussian', 'get_line_multigaussian', 'gen_o3doublet_gauss',
-           'fix_line_profile', 'duplicate_line', 'find_line_peak', 'line_fwhm',
+__all__ = ['Line_Gaussian', 'Line_GaussHermite',
+           'get_line_multigaussian', 'get_line_gausshermite',
+           'gen_o3doublet_gauss', 'gen_o3doublet_gausshermite',
+           'fix_profile_multigauss', 'fix_profile_gausshermite',
+           'duplicate_line', 'find_line_peak', 'line_fwhm',
            'extinction_ccm89',
            'tier_line_ratio', 'tier_line_sigma', 'tier_wind_dv', 'tier_abs_dv']
 #'gen_hbo3', 'add_hbo3', 'tier_line_width', 'tier_line_mean', 'tier_wind_center',
@@ -75,7 +78,7 @@ def gen_o3doublet_gauss(ngauss, amplitude, dv, sigma, bounds=None, amplitude_rat
     nl_o32 = get_line_multigaussian(ngauss, wavec=wave_vac_OIII_4959, line_name='[OIII]4959', amplitude=amplitude, dv=dv, sigma=sigma, **bounds)
 
     # Tie the profiles
-    nl_o3 = fix_line_profile(nl_o31 + nl_o32, '[OIII]5007', '[OIII]4959')
+    nl_o3 = fix_profile_multigauss(nl_o31 + nl_o32, '[OIII]5007', '[OIII]4959')
 
     # Tie the amplitudes
     if ngauss == 1:
@@ -95,7 +98,58 @@ def gen_o3doublet_gauss(ngauss, amplitude, dv, sigma, bounds=None, amplitude_rat
     return nl_o3
 
 
-def fix_line_profile(model, name_ref, name_fix):
+def gen_o3doublet_gausshermite(amplitude=1, dv=0, sigma=200, h3=0, h4=0, bounds=None, amplitude_ratio=2.98):
+    '''
+    Generate the [OIII] 4959, 5007 doublet with Gauss-Hermite function.
+
+    Parameters
+    ----------
+    amplitude : float or list
+        The amplitude of the [OIII]5007 line.
+    dv : float or list
+        The velocity offset of the two lines.
+    sigma : float or list
+        The velocity dispersion of the two lines.
+    bounds (optional) : dict
+        The boundaries of the profile parameters, same for the two lines.
+    amplitude_ratio : float (default: 2.98; Storey & Zeippen 2000)
+        The amplitude ratio of [OIII]5007 over [OIII]4959.
+
+    Returns
+    -------
+    nl_o3 : astropy.modeling.CompoundModel
+        The model with [OIII]4959, 5007 doublet.
+    '''
+    bounds = {} if bounds is None else bounds
+    if bounds.get('amplitude', None) is None:
+        bounds['amplitude'] = (0, None)
+    if bounds.get('dv', None) is None:
+        bounds['dv'] = (-2000, 2000)
+    if bounds.get('sigma', None) is None:
+        bounds['sigma'] = (0, 1000)
+    if bounds.get('h3', None) is None:
+        bounds['h3'] = (-0.5, 0.5)
+    if bounds.get('h4', None) is None:
+        bounds['h4'] = (-0.5, 0.5)
+
+    nl_o31 = get_line_gausshermite(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wave_vac_OIII_5007, line_name='[OIII]5007', bounds=bounds)
+    nl_o32 = get_line_gausshermite(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wave_vac_OIII_4959, line_name='[OIII]4959', bounds=bounds)
+
+    # Tie the profiles
+    nl_o3 = fix_profile_gausshermite(nl_o31 + nl_o32, '[OIII]5007', '[OIII]4959')
+
+    # Tie the amplitudes
+    nl_o3['[OIII]4959'].amplitude.tied = tier_line_ratio('[OIII]4959', '[OIII]5007', ratio=amplitude_ratio)
+    nl_o3['[OIII]4959'].amplitude.value = nl_o3['[OIII]4959'].amplitude.tied(nl_o3)
+
+    # Tie the dv
+    nl_o3['[OIII]4959'].dv.tied = tier_abs_dv('[OIII]4959', '[OIII]5007')
+    nl_o3['[OIII]4959'].dv.value = nl_o3['[OIII]4959'].dv.tied(nl_o3)
+
+    return nl_o3
+
+
+def fix_profile_multigauss(model, name_ref, name_fix):
     '''
     Fix the one line profile to the other.
 
@@ -162,6 +216,36 @@ def fix_line_profile(model, name_ref, name_fix):
             model[name_fix_n].sigma.tied = tier_line_sigma(name_fix_n, name_ref_n)
             # Run it
             model[name_fix_n].sigma.value = model[name_fix_n].sigma.tied(model)
+
+    return model
+
+
+def fix_profile_gausshermite(model, name_ref, name_fix):
+    '''
+    Fix the one line profile to the other.
+
+    Parameters
+    ----------
+    model : astropy.modeling.CompoundModel
+        The model that consists at least two line profiles.
+    name_ref : str
+        The name of the reference line.
+    name_fix : str
+        The name of the line to be fixed the profile.
+    '''
+    assert model.n_submodels > 1, 'There are not additional components to fix!'
+
+    # Tie the sigma
+    model[name_fix].sigma.tied = tier_line_sigma(name_fix, name_ref)
+    model[name_fix].sigma.value = model[name_fix].sigma.tied(model)
+
+    # Tie the h3
+    model[name_fix].h3.tied = tier_line_h3(name_fix, name_ref)
+    model[name_fix].h3.value = model[name_fix].h3.tied(model)
+
+    # Tie the h4
+    model[name_fix].h4.tied = tier_line_h4(name_fix, name_ref)
+    model[name_fix].h4.value = model[name_fix].h4.tied(model)
 
     return model
 
@@ -261,6 +345,42 @@ def get_line_multigaussian(n=1, wavec=5000, line_name='Line', **kwargs):
     return model
 
 
+def get_line_gausshermite(amplitude=1, dv=0., sigma=200., h3=0, h4=0, wavec=5000, line_name='Line', bounds=None):
+    '''
+    Get a Gauss-Hermite line model.
+
+    Parameters
+    ----------
+    amplitude : float
+        The value of the line amplitude.
+    dv : float
+        The velocity offset of the line center, units: km/s.
+    sigma : float
+        The value of the line sigma.
+    h3 : float
+        The h3 of Gauss-Hermite function.
+    h4 : float
+        The h4 of Gauss-Hermite function.
+    wavec : float
+        The central wavelength of the line.
+    line_name : str
+        The name of the line. Each component has an additional index,
+        starting from 0, e.g., "Line 0".
+    bounds (optional) : dict
+        The bounds of the Gauss-Hermite model.
+
+    Returns
+    -------
+    model : A Line_GaussHermite model.
+    '''
+    if bounds is None:
+        bounds = dict(amplitude=(0, None), dv=(-2000, 2000), sigma=(20, 10000), h3=(-0.4, 0.4), h4=(-0.4, 0.4))
+
+    model = Line_GaussHermite(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wavec, clip=True,
+                              bounds=bounds, fixed=dict(wavec=True, clip=True), name=line_name)
+    return model
+
+
 @custom_model
 def Line_Gaussian(x, amplitude=1, dv=0., sigma=200., wavec=5000):
     '''
@@ -282,6 +402,40 @@ def Line_Gaussian(x, amplitude=1, dv=0., sigma=200., wavec=5000):
     v = (x - wavec) / wavec * ls_km  # convert to velocity (km/s)
     fl = amplitude * np.exp(-0.5 * ((v - dv)/ sigma)**2)
     return fl
+
+
+@custom_model
+def Line_GaussHermite(x, amplitude=1, dv=0., sigma=200., h3=0, h4=0, wavec=5000, clip=False):
+    '''
+    The line profile as a fourth-order Gauss–Hermite function.
+
+    Parameters
+    ----------
+    x : array like
+        Wavelength, units: arbitrary.
+    amplitude : float
+        The amplitude of the line profile.
+    dv : float
+        The velocity of the central line offset from wavec, units: km/s.
+    sigma : float
+        The velocity dispersion of the line profile, units: km/s.
+    wavec : float
+        The central wavelength of the line profile, units: same as x.
+    clip : bool (default: False)
+        Replace the negative flux with 0 if True.
+    '''
+    v = (x - wavec) / wavec * ls_km  # convert to velocity (km/s)
+    w = (v - dv)/ sigma
+
+    G = amplitude / np.sqrt(2 * np.pi) / sigma * np.exp(-0.5 * w**2)
+    H3 = (2 * w**3 - 3 * w) / 3**0.5
+    H4 = (4 * w**4 - 12 * w**2 + 3) / 24**0.5
+    f = G * (1 + h3 * H3 + h4 * H4)
+
+    if clip:
+        f[f < 0] = 0
+
+    return f
 
 
 @custom_model
@@ -309,6 +463,32 @@ def extinction_ccm89(x, a_v=0, r_v=3.1):
 
 
 # Tie parameters
+class tier_line_h3(object):
+
+    def __init__(self, name_fit, name_ref):
+        self._name_fit = name_fit
+        self._name_ref = name_ref
+
+    def __repr__(self):
+        return "<Set the h3 of '{0}' the same as that of '{1}'>".format(self._name_fit, self._name_ref)
+
+    def __call__(self, model):
+        return model[self._name_ref].h3.value
+
+
+class tier_line_h4(object):
+
+    def __init__(self, name_fit, name_ref):
+        self._name_fit = name_fit
+        self._name_ref = name_ref
+
+    def __repr__(self):
+        return "<Set the h4 of '{0}' the same as that of '{1}'>".format(self._name_fit, self._name_ref)
+
+    def __call__(self, model):
+        return model[self._name_ref].h4.value
+
+
 class tier_line_ratio(object):
 
     def __init__(self, name_fit, name_ref, ratio=None, ratio_names=None):
