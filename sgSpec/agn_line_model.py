@@ -1,9 +1,14 @@
 import numpy as np
 from astropy.modeling import models, fitting
 from astropy.modeling.models import custom_model
+from astropy.modeling.core import Fittable1DModel
+from astropy.modeling.parameters import Parameter
 from scipy.optimize import minimize
 import extinction
+
 ls_km = 2.99792458e5  # km/s
+FLOAT_EPSILON = float(np.finfo(np.float32).tiny)
+
 
 __all__ = ['Line_Gaussian', 'Line_GaussHermite',
            'get_line_multigaussian', 'get_line_gausshermite',
@@ -98,7 +103,8 @@ def gen_o3doublet_gauss(ngauss, amplitude, dv, sigma, bounds=None, amplitude_rat
     return nl_o3
 
 
-def gen_o3doublet_gausshermite(amplitude=1, dv=0, sigma=200, h3=0, h4=0, bounds=None, amplitude_ratio=2.98):
+def gen_o3doublet_gausshermite(amplitude=1, dv=0, sigma=200, h3=0, h4=0, bounds=None, amplitude_ratio=2.98,
+                               fix_amplitude=False, fix_dv=False, fix_sigma=False, fix_h3=False, fix_h4=False):
     '''
     Generate the [OIII] 4959, 5007 doublet with Gauss-Hermite function.
 
@@ -132,8 +138,8 @@ def gen_o3doublet_gausshermite(amplitude=1, dv=0, sigma=200, h3=0, h4=0, bounds=
     if bounds.get('h4', None) is None:
         bounds['h4'] = (-0.5, 0.5)
 
-    nl_o31 = get_line_gausshermite(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wave_vac_OIII_5007, line_name='[OIII]5007', bounds=bounds)
-    nl_o32 = get_line_gausshermite(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wave_vac_OIII_4959, line_name='[OIII]4959', bounds=bounds)
+    nl_o31 = Line_GaussHermite(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wave_vac_OIII_5007, name='[OIII]5007', bounds=bounds)
+    nl_o32 = Line_GaussHermite(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wave_vac_OIII_4959, name='[OIII]4959', bounds=bounds)
 
     # Tie the profiles
     nl_o3 = fix_profile_gausshermite(nl_o31 + nl_o32, '[OIII]5007', '[OIII]4959')
@@ -345,44 +351,7 @@ def get_line_multigaussian(n=1, wavec=5000, line_name='Line', **kwargs):
     return model
 
 
-def get_line_gausshermite(amplitude=1, dv=0., sigma=200., h3=0, h4=0, wavec=5000, line_name='Line', bounds=None):
-    '''
-    Get a Gauss-Hermite line model.
-
-    Parameters
-    ----------
-    amplitude : float
-        The value of the line amplitude.
-    dv : float
-        The velocity offset of the line center, units: km/s.
-    sigma : float
-        The value of the line sigma.
-    h3 : float
-        The h3 of Gauss-Hermite function.
-    h4 : float
-        The h4 of Gauss-Hermite function.
-    wavec : float
-        The central wavelength of the line.
-    line_name : str
-        The name of the line. Each component has an additional index,
-        starting from 0, e.g., "Line 0".
-    bounds (optional) : dict
-        The bounds of the Gauss-Hermite model.
-
-    Returns
-    -------
-    model : A Line_GaussHermite model.
-    '''
-    if bounds is None:
-        bounds = dict(amplitude=(0, None), dv=(-2000, 2000), sigma=(20, 10000), h3=(-0.4, 0.4), h4=(-0.4, 0.4))
-
-    model = Line_GaussHermite(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wavec, clip=True,
-                              bounds=bounds, fixed=dict(wavec=True, clip=True), name=line_name)
-    return model
-
-
-@custom_model
-def Line_Gaussian(x, amplitude=1, dv=0., sigma=200., wavec=5000):
+class Line_Gaussian(Fittable1DModel):
     '''
     The Gaussian line profile with the sigma as the velocity.
 
@@ -399,13 +368,25 @@ def Line_Gaussian(x, amplitude=1, dv=0., sigma=200., wavec=5000):
     wavec : float
         The central wavelength of the line profile, units: same as x.
     '''
-    v = (x - wavec) / wavec * ls_km  # convert to velocity (km/s)
-    fl = amplitude * np.exp(-0.5 * ((v - dv)/ sigma)**2)
-    return fl
+
+    amplitude = Parameter(default=1, bounds=(0, None))
+    dv = Parameter(default=0, bounds=(-2000, 2000))
+    sigma = Parameter(default=200, bounds=(20, 10000))
+
+    wavec = Parameter(default=5000, fixed=True)
+
+    @staticmethod
+    def evaluate(x, amplitude, dv, sigma, wavec):
+        """
+        Gaussian model function.
+        """
+        v = (x - wavec) / wavec * ls_km  # convert to velocity (km/s)
+        f = amplitude * np.exp(-0.5 * ((v - dv)/ sigma)**2)
+
+        return f
 
 
-@custom_model
-def Line_GaussHermite(x, amplitude=1, dv=0., sigma=200., h3=0, h4=0, wavec=5000, clip=False):
+class Line_GaussHermite(Fittable1DModel):
     '''
     The line profile as a fourth-order Gauss–Hermite function.
 
@@ -422,24 +403,39 @@ def Line_GaussHermite(x, amplitude=1, dv=0., sigma=200., h3=0, h4=0, wavec=5000,
     wavec : float
         The central wavelength of the line profile, units: same as x.
     clip : bool (default: False)
-        Replace the negative flux with 0 if True.
+        Whether to replace the negative value to 0.
     '''
-    v = (x - wavec) / wavec * ls_km  # convert to velocity (km/s)
-    w = (v - dv)/ sigma
 
-    G = amplitude / np.sqrt(2 * np.pi) / sigma * np.exp(-0.5 * w**2)
-    H3 = (2 * w**3 - 3 * w) / 3**0.5
-    H4 = (4 * w**4 - 12 * w**2 + 3) / 24**0.5
-    f = G * (1 + h3 * H3 + h4 * H4)
+    amplitude = Parameter(default=1, bounds=(0, None))
+    dv = Parameter(default=0, bounds=(-2000, 2000))
+    sigma = Parameter(default=200, bounds=(20, 10000))
+    h3 = Parameter(default=0, bounds=(-0.4, 0.4))
+    h4 = Parameter(default=0, bounds=(-0.4, 0.4))
 
-    if clip:
-        f[f < 0] = 0
+    wavec = Parameter(default=5000, fixed=True)
+    clip = Parameter(default=1, fixed=True)
 
-    return f
+    @staticmethod
+    def evaluate(x, amplitude, dv, sigma, h3, h4, wavec, clip):
+        """
+        GaussHermite model function.
+        """
+
+        v = (x - wavec) / wavec * ls_km  # convert to velocity (km/s)
+        w = (v - dv)/ sigma
+
+        G = amplitude / np.sqrt(2 * np.pi) / sigma * np.exp(-0.5 * w**2)
+        H3 = (2 * w**3 - 3 * w) / 3**0.5
+        H4 = (4 * w**4 - 12 * w**2 + 3) / 24**0.5
+        f = G * (1 + h3 * H3 + h4 * H4)
+
+        if clip == 1:
+            f[f < 0] = 0
+
+        return f
 
 
-@custom_model
-def extinction_ccm89(x, a_v=0, r_v=3.1):
+class extinction_ccm89(Fittable1DModel):
     '''
     The extinction model of Cardelli et al. (1989).
 
@@ -458,8 +454,16 @@ def extinction_ccm89(x, a_v=0, r_v=3.1):
     f : array like
         The fraction of out emitting flux.
     '''
-    f =10**(-0.4 * extinction.ccm89(x, a_v, r_v))
-    return f
+    a_v = Parameter(default=0, bounds=(0, None))
+    r_v = Parameter(default=3.1, fixed=True)
+
+    @staticmethod
+    def evaluate(x, a_v, r_v):
+        """
+        The extinction model function (Cardelli et al. 1989).
+        """
+        f =10**(-0.4 * extinction.ccm89(x, a_v, r_v))
+        return f
 
 
 # Tie parameters
@@ -707,471 +711,574 @@ def duplicate_line(model, wavec, line_name='Line'):
 
     return model_new
 
-# Will be deprecated
-def fix_line_profile_deprecated(model, name_ref, name_fix):
-    '''
-    Fix the one line profile to the other.
 
-    Parameters
-    ----------
-    model : astropy.modeling.CompoundModel
-        The model that consists two sets of line profiles.
-    name_ref : str
-        The name of the reference line.
-    name_fix : str
-        The name of the line to be fixed the profile.
-    '''
-    assert model.n_submodels > 1, 'There are not additional components to fix!'
-
-    ncomp_ref = 0
-    ncomp_fix = 0
-    for n in model.submodel_names:
-        if name_ref in n.split(': '):
-            ncomp_ref += 1
-        elif name_fix in n.split(': '):
-            ncomp_fix += 1
-
-    #print('Find {0} for {1} and {2} for {3}'.format(ncomp_ref, name_ref, ncomp_fix, name_fix))
-
-    if ncomp_ref == 0:
-        raise KeyError('The model does not consist {0}'.format(name_ref))
-    elif ncomp_fix == 0:
-        raise KeyError('The model does not consist {0}'.format(name_fix))
-    elif ncomp_ref != ncomp_fix:
-        raise KeyError('The model components does not match!')
-
-    name_ref_0 = '{0}: 0'.format(name_ref)
-    name_fix_0 = '{0}: 0'.format(name_fix)
-
-    # Fix amplitude -- all respect to the first component
-    if ncomp_ref > 1:
-        for n in range(ncomp_ref - 1):
-            # Set the tier
-            name_ref_n = '{0}: {1}'.format(name_ref, n+1)
-            name_fix_n = '{0}: {1}'.format(name_fix, n+1)
-            model[name_fix_n].amplitude.tied = tier_line_ratio(name_fix_n, name_ref_n, ratio_names=[name_fix_0, name_ref_0])
-            # Run it
-            model[name_fix_n].amplitude.value = model[name_fix_n].amplitude.tied(model)
-
-    # Fix center -- all respect to the first component
-    if ncomp_ref > 1:
-        for n in range(ncomp_ref - 1):
-            # Set the tier
-            name_ref_n = '{0}: {1}'.format(name_ref, n+1)
-            name_fix_n = '{0}: {1}'.format(name_fix, n+1)
-            model[name_fix_n].center.tied = tier_wind_center(name_fix_n, name_ref_n, ratio_names=[name_fix_0, name_ref_0])
-            # Run it
-            model[name_fix_n].center.value = model[name_fix_n].center.tied(model)
-
-    # Fix sigma
-    if ncomp_ref == 1:
-        model[name_fix].sigma.tied = tier_line_sigma(name_fix, name_ref)
-        model[name_fix].sigma.value = model[name_fix].sigma.tied(model)
-    else:
-        for n in range(ncomp_ref):
-            # Set the tier
-            name_ref_n = '{0}: {1}'.format(name_ref, n)
-            name_fix_n = '{0}: {1}'.format(name_fix, n)
-            model[name_fix_n].sigma.tied = tier_line_sigma(name_fix_n, name_ref_n)
-            # Run it
-            model[name_fix_n].sigma.value = model[name_fix_n].sigma.tied(model)
-
-    return model
-
-
-def gen_hbo3_rest(amp_hb=1, amp_o5007=1, stddev_o5007=1, wave_o5007=None,
-                  amp_o5007_list=None, std_o5007_list=None, wav_o5007_list=None,
-                  nwind=0, stddev_bounds=(TOLERANCE, 500), delta_z=0.001,
-                  scale_down=10):
-    '''
-    Get the fitting model of the narrow H-beta and [OIII] components.
-    '''
-
-    if wave_o5007 is None:
-        mean_hb = Hbeta
-        mean_o4959 = OIII_4959
-        mean_o5007 = OIII_5007
-    else:
-        mean_o5007 = wave_o5007
-        mean_o4959 = OIII_4959 / OIII_5007 * wave_o5007
-        mean_hb = Hbeta / OIII_5007 * wave_o5007
-
-    stddev_hb = stddev_o5007 / mean_o5007 * mean_hb
-    stddev_o4959 = stddev_o5007 / mean_o5007 * mean_o4959
-    amp_o4959 = amp_o5007 / r_OIII
-
-    bounds = dict(
-        amplitude=(TOLERANCE, None),
-        stddev=stddev_bounds
-    )
-    m_init = (models.Gaussian1D(amplitude=amp_o5007, mean=mean_o5007, stddev=stddev_o5007, name='[OIII]5007 C', bounds=bounds) +
-              models.Gaussian1D(name='[OIII]4959 C', bounds=bounds) +
-              models.Gaussian1D(amplitude=amp_hb, name='Hbeta NC', bounds=bounds))
-
-    name_o31 = '[OIII]5007 C'
-    name_o32 = '[OIII]4959 C'
-    name_hb = 'Hbeta NC'
-    m_init[name_o32].amplitude.tied = tier_line_ratio(name_o32, name_o31, r_OIII)
-    m_init[name_o32].stddev.tied = tier_line_width(name_o32, name_o31)
-    m_init[name_o32].mean.tied = tier_line_mean(name_o32, name_o31, OIII_4959, OIII_5007)
-    m_init[name_hb].stddev.tied = tier_line_width(name_hb, name_o31)
-    m_init[name_hb].mean.tied = tier_line_mean(name_hb, name_o31, Hbeta, OIII_5007)
-
-
-    m_init = add_hbo3(m_init, amp_o5007_list, std_o5007_list, wav_o5007_list,
-                 nwind, stddev_bounds, scale_down)
-
-    return m_init
-
-
-def add_hbo3_rest(model, amp_o5007_list=None, std_o5007_list=None, wav_o5007_list=None,
-                  nwind=0, stddev_bounds=(TOLERANCE, 500), scale_down=10):
-    '''
-    Get the fitting model of the narrow H-beta and [OIII] components.
-    '''
-    bounds = dict(
-        amplitude=(TOLERANCE, None),
-        stddev=stddev_bounds
-    )
-    if amp_o5007_list is not None:
-        nwind = len(amp_o5007_list)
-
-    n_exist = 0
-    for loop in range(nwind):
-        if amp_o5007_list is None:
-            amp_o5007 = model['[OIII]5007 C'].amplitude.value / (scale_down+loop)
-        else:
-            amp_o5007 = amp_o5007_list[loop]
-        if std_o5007_list is None:
-            std_o5007 = model['[OIII]5007 C'].stddev.value
-        else:
-            assert len(std_o5007_list) == nwind
-            std_o5007 = std_o5007_list[loop]
-        if wav_o5007_list is None:
-            wav_o5007 = model['[OIII]5007 C'].mean.value
-        else:
-            assert len(wav_o5007_list) == nwind
-            wav_o5007 = wav_o5007_list[loop]
-
-        name_o31w = '[OIII]5007 W{0}'.format(n_exist + loop)
-        while (loop == 0) & (n_exist < 1000):
-            if name_o31w in model.submodel_names:
-                n_exist += 1
-                name_o31w = '[OIII]5007 W{0}'.format(n_exist + loop)
-            else:
-                break
-
-        model_index = n_exist + loop
-        name_o31w = '[OIII]5007 W{0}'.format(model_index)
-        name_o32w = '[OIII]4959 W{0}'.format(model_index)
-        name_hbw = 'Hbeta NW{0}'.format(model_index)
-        model += models.Gaussian1D(amplitude=amp_o5007, mean=wav_o5007, stddev=std_o5007, name=name_o31w, bounds=bounds)
-        model += models.Gaussian1D(name=name_o32w, bounds=bounds)
-        model += models.Gaussian1D(name=name_hbw, bounds=bounds)
-
-        model[name_o32w].amplitude.tied = tier_line_ratio(name_o32w, name_o31w, r_OIII)
-        model[name_o32w].stddev.tied = tier_line_width(name_o32w, name_o31w)
-        model[name_o32w].mean.tied = tier_line_mean(name_o32w, name_o31w, OIII_4959, OIII_5007)
-        model[name_hbw].amplitude.tied = tier_line_ratio(name_hbw, 'Hbeta NC', ratio_names=[name_o31w, '[OIII]5007 C'])
-        model[name_hbw].stddev.tied = tier_line_width(name_hbw, name_o31w)
-        model[name_hbw].mean.tied = tier_line_mean(name_hbw, name_o31w, Hbeta, OIII_5007)
-
-    return model
-
-
-def gen_hbo3(z=0.001, amp_hb=1, amp_o5007=1, stddev_o5007=1, wave_o5007=None,
-             amp_o5007_list=None, std_o5007_list=None, wav_o5007_list=None,
-             nwind=0, stddev_bounds=(TOLERANCE, 500), scale_down=10):
-    '''
-    Get the fitting model of the narrow H-beta and [OIII] components.
-    '''
-
-    if wave_o5007 is None:
-        mean_hb = Hbeta * (1 + z)
-        mean_o4959 = OIII_4959 * (1 + z)
-        mean_o5007 = OIII_5007 * (1 + z)
-    else:
-        mean_o5007 = wave_o5007
-        mean_o4959 = OIII_4959 / OIII_5007 * wave_o5007
-        mean_hb = Hbeta / OIII_5007 * wave_o5007
-
-    stddev_hb = stddev_o5007 / mean_o5007 * mean_hb
-    stddev_o4959 = stddev_o5007 / mean_o5007 * mean_o4959
-    amp_o4959 = amp_o5007 / r_OIII
-
-    bounds = dict(
-        amplitude=(TOLERANCE, None),
-        stddev=stddev_bounds
-    )
-    m_init = (models.Gaussian1D(amplitude=amp_o5007, mean=mean_o5007, stddev=stddev_o5007, name='[OIII]5007 C', bounds=bounds) +
-              models.Gaussian1D(name='[OIII]4959 C', bounds=bounds) +
-              models.Gaussian1D(amplitude=amp_hb, name='Hbeta NC', bounds=bounds))
-
-    name_o31 = '[OIII]5007 C'
-    name_o32 = '[OIII]4959 C'
-    name_hb = 'Hbeta NC'
-    m_init[name_o32].amplitude.tied = tier_line_ratio(name_o32, name_o31, r_OIII)
-    m_init[name_o32].stddev.tied = tier_line_width(name_o32, name_o31)
-    m_init[name_o32].mean.tied = tier_line_mean(name_o32, name_o31, OIII_4959, OIII_5007)
-    m_init[name_hb].stddev.tied = tier_line_width(name_hb, name_o31)
-    m_init[name_hb].mean.tied = tier_line_mean(name_hb, name_o31, Hbeta, OIII_5007)
-
-
-    m_init = add_hbo3(m_init, amp_o5007_list, std_o5007_list, wav_o5007_list,
-                 nwind, stddev_bounds, scale_down)
-
-    return m_init
-
-
-def add_hbo3(model, amp_o5007_list=None, std_o5007_list=None, wav_o5007_list=None,
-             nwind=0, stddev_bounds=(TOLERANCE, 500), scale_down=10):
-    '''
-    Get the fitting model of the narrow H-beta and [OIII] components.
-    '''
-    bounds = dict(
-        amplitude=(TOLERANCE, None),
-        stddev=stddev_bounds
-    )
-    if amp_o5007_list is not None:
-        nwind = len(amp_o5007_list)
-
-    n_exist = 0
-    for loop in range(nwind):
-        if amp_o5007_list is None:
-            amp_o5007 = model['[OIII]5007 C'].amplitude.value / (scale_down+loop)
-        else:
-            amp_o5007 = amp_o5007_list[loop]
-        if std_o5007_list is None:
-            std_o5007 = model['[OIII]5007 C'].stddev.value
-        else:
-            assert len(std_o5007_list) == nwind
-            std_o5007 = std_o5007_list[loop]
-        if wav_o5007_list is None:
-            wav_o5007 = model['[OIII]5007 C'].mean.value
-        else:
-            assert len(wav_o5007_list) == nwind
-            wav_o5007 = wav_o5007_list[loop]
-
-        name_o31w = '[OIII]5007 W{0}'.format(n_exist + loop)
-        while (loop == 0) & (n_exist < 1000):
-            if name_o31w in model.submodel_names:
-                n_exist += 1
-                name_o31w = '[OIII]5007 W{0}'.format(n_exist + loop)
-            else:
-                break
-
-        model_index = n_exist + loop
-        name_o31w = '[OIII]5007 W{0}'.format(model_index)
-        name_o32w = '[OIII]4959 W{0}'.format(model_index)
-        name_hbw = 'Hbeta NW{0}'.format(model_index)
-        model += models.Gaussian1D(amplitude=amp_o5007, mean=wav_o5007, stddev=std_o5007, name=name_o31w, bounds=bounds)
-        model += models.Gaussian1D(name=name_o32w, bounds=bounds)
-        model += models.Gaussian1D(name=name_hbw, bounds=bounds)
-
-        model[name_o32w].amplitude.tied = tier_line_ratio(name_o32w, name_o31w, r_OIII)
-        model[name_o32w].stddev.tied = tier_line_width(name_o32w, name_o31w)
-        model[name_o32w].mean.tied = tier_line_mean(name_o32w, name_o31w, OIII_4959, OIII_5007)
-        model[name_hbw].amplitude.tied = tier_line_ratio(name_hbw, 'Hbeta NC', ratio_names=[name_o31w, '[OIII]5007 C'])
-        model[name_hbw].stddev.tied = tier_line_width(name_hbw, name_o31w)
-        model[name_hbw].mean.tied = tier_line_mean(name_hbw, name_o31w, Hbeta, OIII_5007)
-
-    return model
-
-
-def get_line_multigaussian_deprecated(n=1, line_name='Line', **kwargs):
-    '''
-    Get a multigaussian line model.
-
-    Parameters
-    ----------
-    n : int
-        Number of Gaussian components.
-    line_name : str
-        The name of the line. Each component has an additional index,
-        starting from 0, e.g., "Line 0".
-    amplitude (optional) : list
-        The value of the line amplitude.
-    center (optional) : list
-        The value of the line center.
-    sigma (optional) : list
-        The value of the line sigma.
-    amplitude_bounds (optional) : tuple or list
-        The bound(s) of the line amplitude.
-    center_bounds (optional) : tuple or list
-        The bound(s) of the line center.
-    sigma_bounds (optional) : tuple or list
-        The bound(s) of the line sigma.
-
-    Returns
-    -------
-    model : The sum of Line_Gaussian.
-    '''
-    assert isinstance(n, int) & (n > 0), 'We only accept n as >0 integer!'
-    parList = ['amplitude', 'center', 'sigma']
-    bouList = ['amplitude_bounds', 'center_bounds', 'sigma_bounds']
-
-    # Check the parameters
-    for kw in kwargs:
-        if kw not in parList + bouList:
-            raise KeyError('{0} is not recognized!'.format(kw))
-
-    # Generate the model
-    if n > 1:
-        model = Line_Gaussian(name='{0}: 0'.format(line_name))
-        for loop in range(n-1):
-            model += Line_Gaussian(name='{0}: {1}'.format(line_name, loop+1))
-        model.name = '{0}'.format(line_name)
-    else:
-        model = Line_Gaussian(name='{0}'.format(line_name))
-
-    # Set the parameters
-    for kw in parList:
-        kv = kwargs.get(kw, None)
-
-        if kv is not None:
-            assert isinstance(kv, list), 'We only accept {0} as a list!'.format(kw)
-            assert len(kv) <= n, 'The length of {0} is larger than n!'.format(kw)
-
-            if n > 1:
-                for loop, v in enumerate(kv):
-                    model[loop].__setattr__(kw, v)
-            else:
-                model.__setattr__(kw, kv[0])
-
-    # Set the bounds of the parameters
-    for kw in bouList:
-        kv = kwargs.get(kw, None)
-        pn, pa = kw.split('_')
-
-        if isinstance(kv, tuple):
-            assert len(kv) == 2, 'The {0} should contain 2 elements!'.format(kw)
-
-            if n > 1:
-                for loop in range(n):
-                    p = model[loop].__getattribute__(pn)
-                    p.__setattr__(pa, kv)
-            else:
-                p = model.__getattribute__(pn)
-                p.__setattr__(pa, kv)
-
-        elif isinstance(kv, list):
-            assert len(kv) <= n, 'The length of {0} is larger than n!'.format(kw)
-
-            if n > 1:
-                for loop, bou in enumerate(kv):
-                    p = model[loop].__getattribute__(pn)
-                    p.__setattr__(pa, bou)
-            else:
-                p = model.__getattribute__(pn)
-                p.__setattr__(pa, kv[0])
-
-        elif kv is not None:
-            raise ValueError('Cannot recognize {0} ({1})'.format(kw, kv))
-
-    return model
-
-
-@custom_model
-def Line_Gaussian_deprecated(x, amplitude=1, center=5000., sigma=200.):
-    '''
-    The Gaussian line profile with the sigma as the velocity.
-
-    Parameters
-    ----------
-    x : array like
-        Wavelength, units: arbitrary.
-    amplitude : float
-        The amplitude of the line profile.
-    center : float
-        The central wavelength of the line profile, units: same as x.
-    sigma : float
-        The velocity dispersion of the line profile, units: km/s.
-    '''
-    #if sigma < 0:
-    #    raise ValueError('Sigma cannot be negative!')
-    v = (x - center) / center * ls_km  # convert to velocity (km/s)
-    fl = amplitude * np.exp(-0.5 * (v / sigma)**2)
-    return fl
-
-
-class tier_abs_center(object):
-
-    def __init__(self, name_fit, name_ref, delta_wave):
-        '''
-        Tie the center of the line in an absolute wavelength difference.
-
-        Parameters
-        ----------
-        name_fit : str
-            The name of the component to be fitted.
-        name_ref : str
-            The name of the component to be tied to.
-        delta_wave : str
-            The wavelength difference of the two center. Positive means red to
-            the reference line.
-        '''
-        self._name_fit = name_fit
-        self._name_ref = name_ref
-        self._delta_wave = delta_wave
-
-    def __repr__(self):
-        return "<Set the line center of '{0}' is set {1} to the red of '{2}'>".format(self._name_fit, self._delta_wave, self._name_ref)
-
-    def __call__(self, model):
-        return model[self._name_ref].center.value + self._delta_wave
-
-
-class tier_wind_center(object):
-
-    def __init__(self, name_fit, name_ref, ratio_names):
-        '''
-        Tie the center of wind components relative to the line core component.
-
-        Parameters
-        ----------
-        name_fit : str
-            The name of the component to be fitted.
-        name_ref : str
-            The name of the component to be tied to.
-        wavec_fit : str
-            The name of the component for the reference wavelength
-        '''
-        self._name_fit = name_fit
-        self._name_ref = name_ref
-        self._ratio_names = ratio_names
-
-    def __repr__(self):
-        return "<Set the line center of '{0}' according to that of '{1}' according to '{2}'>".format(self._name_fit, self._name_ref, self._ratio_names)
-
-    def __call__(self, model):
-        wavec_fit = model[self._ratio_names[0]].center.value
-        wavec_ref = model[self._ratio_names[1]].center.value
-        return wavec_fit / wavec_ref * model[self._name_ref].center.value
-
-
-class tier_line_width(object):
-
-    def __init__(self, name_fit, name_ref):
-        self._name_fit = name_fit
-        self._name_ref = name_ref
-
-    def __repr__(self):
-        return "<Set the line width of '{0}' the same as that of '{1}'>".format(self._name_fit, self._name_ref)
-
-    def __call__(self, model):
-        return model[self._name_ref].stddev.value / model[self._name_ref].mean.value * model[self._name_fit].mean.value
-
-
-class tier_line_mean(object):
-
-    def __init__(self, name_fit, name_ref, wavec_fit, wavec_ref):
-        self._name_fit = name_fit
-        self._name_ref = name_ref
-        self._wavec_fit = wavec_fit
-        self._wavec_ref = wavec_ref
-
-    def __repr__(self):
-        return "<Set the line center of '{0}' ({2}) according to that of '{1}' ({3})>".format(self._name_fit, self._name_ref, self._wavec_fit, self._wavec_ref)
-
-    def __call__(self, model):
-        return self._wavec_fit / self._wavec_ref * model[self._name_ref].mean.value
+## Will be deprecated
+#
+##def gen_o3doublet_gausshermite(amplitude=1, dv=0, sigma=200, h3=0, h4=0, bounds=None, amplitude_ratio=2.98,
+##                               fix_amplitude=False, fix_dv=False, fix_sigma=False, fix_h3=False, fix_h4=False):
+##    '''
+##    Generate the [OIII] 4959, 5007 doublet with Gauss-Hermite function.
+##
+##    Parameters
+##    ----------
+##    amplitude : float or list
+##        The amplitude of the [OIII]5007 line.
+##    dv : float or list
+##        The velocity offset of the two lines.
+##    sigma : float or list
+##        The velocity dispersion of the two lines.
+##    bounds (optional) : dict
+##        The boundaries of the profile parameters, same for the two lines.
+##    amplitude_ratio : float (default: 2.98; Storey & Zeippen 2000)
+##        The amplitude ratio of [OIII]5007 over [OIII]4959.
+##
+##    Returns
+##    -------
+##    nl_o3 : astropy.modeling.CompoundModel
+##        The model with [OIII]4959, 5007 doublet.
+##    '''
+##    bounds = {} if bounds is None else bounds
+##    if bounds.get('amplitude', None) is None:
+##        bounds['amplitude'] = (0, None)
+##    if bounds.get('dv', None) is None:
+##        bounds['dv'] = (-2000, 2000)
+##    if bounds.get('sigma', None) is None:
+##        bounds['sigma'] = (0, 1000)
+##    if bounds.get('h3', None) is None:
+##        bounds['h3'] = (-0.5, 0.5)
+##    if bounds.get('h4', None) is None:
+##        bounds['h4'] = (-0.5, 0.5)
+##
+##    nl_o31 = get_line_gausshermite(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wave_vac_OIII_5007, line_name='[OIII]5007', bounds=bounds, fix_amplitude=fix_amplitude, fix_dv=fix_dv, fix_sigma=fix_sigma, fix_h3=fix_h3, fix_h4=fix_h4)
+##    nl_o32 = get_line_gausshermite(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wave_vac_OIII_4959, line_name='[OIII]4959', bounds=bounds)
+##
+##    # Tie the profiles
+##    nl_o3 = fix_profile_gausshermite(nl_o31 + nl_o32, '[OIII]5007', '[OIII]4959')
+##
+##    # Tie the amplitudes
+##    nl_o3['[OIII]4959'].amplitude.tied = tier_line_ratio('[OIII]4959', '[OIII]5007', ratio=amplitude_ratio)
+##    nl_o3['[OIII]4959'].amplitude.value = nl_o3['[OIII]4959'].amplitude.tied(nl_o3)
+##
+##    # Tie the dv
+##    nl_o3['[OIII]4959'].dv.tied = tier_abs_dv('[OIII]4959', '[OIII]5007')
+##    nl_o3['[OIII]4959'].dv.value = nl_o3['[OIII]4959'].dv.tied(nl_o3)
+##
+##    return nl_o3
+#
+#
+#def get_line_gausshermite(amplitude=1, dv=0., sigma=200., h3=0, h4=0, wavec=5000, line_name='Line', bounds=None,
+#                          fix_amplitude=False, fix_dv=False, fix_sigma=False, fix_h3=False, fix_h4=False):
+#    '''
+#    Get a Gauss-Hermite line model.
+#
+#    Parameters
+#    ----------
+#    amplitude : float
+#        The value of the line amplitude.
+#    dv : float
+#        The velocity offset of the line center, units: km/s.
+#    sigma : float
+#        The value of the line sigma.
+#    h3 : float
+#        The h3 of Gauss-Hermite function.
+#    h4 : float
+#        The h4 of Gauss-Hermite function.
+#    wavec : float
+#        The central wavelength of the line.
+#    line_name : str
+#        The name of the line. Each component has an additional index,
+#        starting from 0, e.g., "Line 0".
+#    bounds (optional) : dict
+#        The bounds of the Gauss-Hermite model.
+#
+#    Returns
+#    -------
+#    model : A Line_GaussHermite model.
+#    '''
+#    if bounds is None:
+#        bounds = dict(amplitude=(0, None), dv=(-2000, 2000), sigma=(20, 10000), h3=(-0.4, 0.4), h4=(-0.4, 0.4))
+#
+#    fixed = dict()
+#    if fix_amplitude:
+#        fixed['amplitude'] = True
+#    if fix_dv:
+#        fixed['dv'] = True
+#    if fix_sigma:
+#        fixed['sigma'] = True
+#    if fix_h3:
+#        fixed['h3'] = True
+#    if fix_h4:
+#        fixed['h4'] = True
+#
+#    model = Line_GaussHermite(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wavec, clip=True,
+#                              bounds=bounds, fixed=fixed, name=line_name)
+#    return model
+#
+#
+#def fix_line_profile_deprecated(model, name_ref, name_fix):
+#    '''
+#    Fix the one line profile to the other.
+#
+#    Parameters
+#    ----------
+#    model : astropy.modeling.CompoundModel
+#        The model that consists two sets of line profiles.
+#    name_ref : str
+#        The name of the reference line.
+#    name_fix : str
+#        The name of the line to be fixed the profile.
+#    '''
+#    assert model.n_submodels > 1, 'There are not additional components to fix!'
+#
+#    ncomp_ref = 0
+#    ncomp_fix = 0
+#    for n in model.submodel_names:
+#        if name_ref in n.split(': '):
+#            ncomp_ref += 1
+#        elif name_fix in n.split(': '):
+#            ncomp_fix += 1
+#
+#    #print('Find {0} for {1} and {2} for {3}'.format(ncomp_ref, name_ref, ncomp_fix, name_fix))
+#
+#    if ncomp_ref == 0:
+#        raise KeyError('The model does not consist {0}'.format(name_ref))
+#    elif ncomp_fix == 0:
+#        raise KeyError('The model does not consist {0}'.format(name_fix))
+#    elif ncomp_ref != ncomp_fix:
+#        raise KeyError('The model components does not match!')
+#
+#    name_ref_0 = '{0}: 0'.format(name_ref)
+#    name_fix_0 = '{0}: 0'.format(name_fix)
+#
+#    # Fix amplitude -- all respect to the first component
+#    if ncomp_ref > 1:
+#        for n in range(ncomp_ref - 1):
+#            # Set the tier
+#            name_ref_n = '{0}: {1}'.format(name_ref, n+1)
+#            name_fix_n = '{0}: {1}'.format(name_fix, n+1)
+#            model[name_fix_n].amplitude.tied = tier_line_ratio(name_fix_n, name_ref_n, ratio_names=[name_fix_0, name_ref_0])
+#            # Run it
+#            model[name_fix_n].amplitude.value = model[name_fix_n].amplitude.tied(model)
+#
+#    # Fix center -- all respect to the first component
+#    if ncomp_ref > 1:
+#        for n in range(ncomp_ref - 1):
+#            # Set the tier
+#            name_ref_n = '{0}: {1}'.format(name_ref, n+1)
+#            name_fix_n = '{0}: {1}'.format(name_fix, n+1)
+#            model[name_fix_n].center.tied = tier_wind_center(name_fix_n, name_ref_n, ratio_names=[name_fix_0, name_ref_0])
+#            # Run it
+#            model[name_fix_n].center.value = model[name_fix_n].center.tied(model)
+#
+#    # Fix sigma
+#    if ncomp_ref == 1:
+#        model[name_fix].sigma.tied = tier_line_sigma(name_fix, name_ref)
+#        model[name_fix].sigma.value = model[name_fix].sigma.tied(model)
+#    else:
+#        for n in range(ncomp_ref):
+#            # Set the tier
+#            name_ref_n = '{0}: {1}'.format(name_ref, n)
+#            name_fix_n = '{0}: {1}'.format(name_fix, n)
+#            model[name_fix_n].sigma.tied = tier_line_sigma(name_fix_n, name_ref_n)
+#            # Run it
+#            model[name_fix_n].sigma.value = model[name_fix_n].sigma.tied(model)
+#
+#    return model
+#
+#
+#def gen_hbo3_rest(amp_hb=1, amp_o5007=1, stddev_o5007=1, wave_o5007=None,
+#                  amp_o5007_list=None, std_o5007_list=None, wav_o5007_list=None,
+#                  nwind=0, stddev_bounds=(TOLERANCE, 500), delta_z=0.001,
+#                  scale_down=10):
+#    '''
+#    Get the fitting model of the narrow H-beta and [OIII] components.
+#    '''
+#
+#    if wave_o5007 is None:
+#        mean_hb = Hbeta
+#        mean_o4959 = OIII_4959
+#        mean_o5007 = OIII_5007
+#    else:
+#        mean_o5007 = wave_o5007
+#        mean_o4959 = OIII_4959 / OIII_5007 * wave_o5007
+#        mean_hb = Hbeta / OIII_5007 * wave_o5007
+#
+#    stddev_hb = stddev_o5007 / mean_o5007 * mean_hb
+#    stddev_o4959 = stddev_o5007 / mean_o5007 * mean_o4959
+#    amp_o4959 = amp_o5007 / r_OIII
+#
+#    bounds = dict(
+#        amplitude=(TOLERANCE, None),
+#        stddev=stddev_bounds
+#    )
+#    m_init = (models.Gaussian1D(amplitude=amp_o5007, mean=mean_o5007, stddev=stddev_o5007, name='[OIII]5007 C', bounds=bounds) +
+#              models.Gaussian1D(name='[OIII]4959 C', bounds=bounds) +
+#              models.Gaussian1D(amplitude=amp_hb, name='Hbeta NC', bounds=bounds))
+#
+#    name_o31 = '[OIII]5007 C'
+#    name_o32 = '[OIII]4959 C'
+#    name_hb = 'Hbeta NC'
+#    m_init[name_o32].amplitude.tied = tier_line_ratio(name_o32, name_o31, r_OIII)
+#    m_init[name_o32].stddev.tied = tier_line_width(name_o32, name_o31)
+#    m_init[name_o32].mean.tied = tier_line_mean(name_o32, name_o31, OIII_4959, OIII_5007)
+#    m_init[name_hb].stddev.tied = tier_line_width(name_hb, name_o31)
+#    m_init[name_hb].mean.tied = tier_line_mean(name_hb, name_o31, Hbeta, OIII_5007)
+#
+#
+#    m_init = add_hbo3(m_init, amp_o5007_list, std_o5007_list, wav_o5007_list,
+#                 nwind, stddev_bounds, scale_down)
+#
+#    return m_init
+#
+#
+#def add_hbo3_rest(model, amp_o5007_list=None, std_o5007_list=None, wav_o5007_list=None,
+#                  nwind=0, stddev_bounds=(TOLERANCE, 500), scale_down=10):
+#    '''
+#    Get the fitting model of the narrow H-beta and [OIII] components.
+#    '''
+#    bounds = dict(
+#        amplitude=(TOLERANCE, None),
+#        stddev=stddev_bounds
+#    )
+#    if amp_o5007_list is not None:
+#        nwind = len(amp_o5007_list)
+#
+#    n_exist = 0
+#    for loop in range(nwind):
+#        if amp_o5007_list is None:
+#            amp_o5007 = model['[OIII]5007 C'].amplitude.value / (scale_down+loop)
+#        else:
+#            amp_o5007 = amp_o5007_list[loop]
+#        if std_o5007_list is None:
+#            std_o5007 = model['[OIII]5007 C'].stddev.value
+#        else:
+#            assert len(std_o5007_list) == nwind
+#            std_o5007 = std_o5007_list[loop]
+#        if wav_o5007_list is None:
+#            wav_o5007 = model['[OIII]5007 C'].mean.value
+#        else:
+#            assert len(wav_o5007_list) == nwind
+#            wav_o5007 = wav_o5007_list[loop]
+#
+#        name_o31w = '[OIII]5007 W{0}'.format(n_exist + loop)
+#        while (loop == 0) & (n_exist < 1000):
+#            if name_o31w in model.submodel_names:
+#                n_exist += 1
+#                name_o31w = '[OIII]5007 W{0}'.format(n_exist + loop)
+#            else:
+#                break
+#
+#        model_index = n_exist + loop
+#        name_o31w = '[OIII]5007 W{0}'.format(model_index)
+#        name_o32w = '[OIII]4959 W{0}'.format(model_index)
+#        name_hbw = 'Hbeta NW{0}'.format(model_index)
+#        model += models.Gaussian1D(amplitude=amp_o5007, mean=wav_o5007, stddev=std_o5007, name=name_o31w, bounds=bounds)
+#        model += models.Gaussian1D(name=name_o32w, bounds=bounds)
+#        model += models.Gaussian1D(name=name_hbw, bounds=bounds)
+#
+#        model[name_o32w].amplitude.tied = tier_line_ratio(name_o32w, name_o31w, r_OIII)
+#        model[name_o32w].stddev.tied = tier_line_width(name_o32w, name_o31w)
+#        model[name_o32w].mean.tied = tier_line_mean(name_o32w, name_o31w, OIII_4959, OIII_5007)
+#        model[name_hbw].amplitude.tied = tier_line_ratio(name_hbw, 'Hbeta NC', ratio_names=[name_o31w, '[OIII]5007 C'])
+#        model[name_hbw].stddev.tied = tier_line_width(name_hbw, name_o31w)
+#        model[name_hbw].mean.tied = tier_line_mean(name_hbw, name_o31w, Hbeta, OIII_5007)
+#
+#    return model
+#
+#
+#def gen_hbo3(z=0.001, amp_hb=1, amp_o5007=1, stddev_o5007=1, wave_o5007=None,
+#             amp_o5007_list=None, std_o5007_list=None, wav_o5007_list=None,
+#             nwind=0, stddev_bounds=(TOLERANCE, 500), scale_down=10):
+#    '''
+#    Get the fitting model of the narrow H-beta and [OIII] components.
+#    '''
+#
+#    if wave_o5007 is None:
+#        mean_hb = Hbeta * (1 + z)
+#        mean_o4959 = OIII_4959 * (1 + z)
+#        mean_o5007 = OIII_5007 * (1 + z)
+#    else:
+#        mean_o5007 = wave_o5007
+#        mean_o4959 = OIII_4959 / OIII_5007 * wave_o5007
+#        mean_hb = Hbeta / OIII_5007 * wave_o5007
+#
+#    stddev_hb = stddev_o5007 / mean_o5007 * mean_hb
+#    stddev_o4959 = stddev_o5007 / mean_o5007 * mean_o4959
+#    amp_o4959 = amp_o5007 / r_OIII
+#
+#    bounds = dict(
+#        amplitude=(TOLERANCE, None),
+#        stddev=stddev_bounds
+#    )
+#    m_init = (models.Gaussian1D(amplitude=amp_o5007, mean=mean_o5007, stddev=stddev_o5007, name='[OIII]5007 C', bounds=bounds) +
+#              models.Gaussian1D(name='[OIII]4959 C', bounds=bounds) +
+#              models.Gaussian1D(amplitude=amp_hb, name='Hbeta NC', bounds=bounds))
+#
+#    name_o31 = '[OIII]5007 C'
+#    name_o32 = '[OIII]4959 C'
+#    name_hb = 'Hbeta NC'
+#    m_init[name_o32].amplitude.tied = tier_line_ratio(name_o32, name_o31, r_OIII)
+#    m_init[name_o32].stddev.tied = tier_line_width(name_o32, name_o31)
+#    m_init[name_o32].mean.tied = tier_line_mean(name_o32, name_o31, OIII_4959, OIII_5007)
+#    m_init[name_hb].stddev.tied = tier_line_width(name_hb, name_o31)
+#    m_init[name_hb].mean.tied = tier_line_mean(name_hb, name_o31, Hbeta, OIII_5007)
+#
+#
+#    m_init = add_hbo3(m_init, amp_o5007_list, std_o5007_list, wav_o5007_list,
+#                 nwind, stddev_bounds, scale_down)
+#
+#    return m_init
+#
+#
+#def add_hbo3(model, amp_o5007_list=None, std_o5007_list=None, wav_o5007_list=None,
+#             nwind=0, stddev_bounds=(TOLERANCE, 500), scale_down=10):
+#    '''
+#    Get the fitting model of the narrow H-beta and [OIII] components.
+#    '''
+#    bounds = dict(
+#        amplitude=(TOLERANCE, None),
+#        stddev=stddev_bounds
+#    )
+#    if amp_o5007_list is not None:
+#        nwind = len(amp_o5007_list)
+#
+#    n_exist = 0
+#    for loop in range(nwind):
+#        if amp_o5007_list is None:
+#            amp_o5007 = model['[OIII]5007 C'].amplitude.value / (scale_down+loop)
+#        else:
+#            amp_o5007 = amp_o5007_list[loop]
+#        if std_o5007_list is None:
+#            std_o5007 = model['[OIII]5007 C'].stddev.value
+#        else:
+#            assert len(std_o5007_list) == nwind
+#            std_o5007 = std_o5007_list[loop]
+#        if wav_o5007_list is None:
+#            wav_o5007 = model['[OIII]5007 C'].mean.value
+#        else:
+#            assert len(wav_o5007_list) == nwind
+#            wav_o5007 = wav_o5007_list[loop]
+#
+#        name_o31w = '[OIII]5007 W{0}'.format(n_exist + loop)
+#        while (loop == 0) & (n_exist < 1000):
+#            if name_o31w in model.submodel_names:
+#                n_exist += 1
+#                name_o31w = '[OIII]5007 W{0}'.format(n_exist + loop)
+#            else:
+#                break
+#
+#        model_index = n_exist + loop
+#        name_o31w = '[OIII]5007 W{0}'.format(model_index)
+#        name_o32w = '[OIII]4959 W{0}'.format(model_index)
+#        name_hbw = 'Hbeta NW{0}'.format(model_index)
+#        model += models.Gaussian1D(amplitude=amp_o5007, mean=wav_o5007, stddev=std_o5007, name=name_o31w, bounds=bounds)
+#        model += models.Gaussian1D(name=name_o32w, bounds=bounds)
+#        model += models.Gaussian1D(name=name_hbw, bounds=bounds)
+#
+#        model[name_o32w].amplitude.tied = tier_line_ratio(name_o32w, name_o31w, r_OIII)
+#        model[name_o32w].stddev.tied = tier_line_width(name_o32w, name_o31w)
+#        model[name_o32w].mean.tied = tier_line_mean(name_o32w, name_o31w, OIII_4959, OIII_5007)
+#        model[name_hbw].amplitude.tied = tier_line_ratio(name_hbw, 'Hbeta NC', ratio_names=[name_o31w, '[OIII]5007 C'])
+#        model[name_hbw].stddev.tied = tier_line_width(name_hbw, name_o31w)
+#        model[name_hbw].mean.tied = tier_line_mean(name_hbw, name_o31w, Hbeta, OIII_5007)
+#
+#    return model
+#
+#
+#def get_line_multigaussian_deprecated(n=1, line_name='Line', **kwargs):
+#    '''
+#    Get a multigaussian line model.
+#
+#    Parameters
+#    ----------
+#    n : int
+#        Number of Gaussian components.
+#    line_name : str
+#        The name of the line. Each component has an additional index,
+#        starting from 0, e.g., "Line 0".
+#    amplitude (optional) : list
+#        The value of the line amplitude.
+#    center (optional) : list
+#        The value of the line center.
+#    sigma (optional) : list
+#        The value of the line sigma.
+#    amplitude_bounds (optional) : tuple or list
+#        The bound(s) of the line amplitude.
+#    center_bounds (optional) : tuple or list
+#        The bound(s) of the line center.
+#    sigma_bounds (optional) : tuple or list
+#        The bound(s) of the line sigma.
+#
+#    Returns
+#    -------
+#    model : The sum of Line_Gaussian.
+#    '''
+#    assert isinstance(n, int) & (n > 0), 'We only accept n as >0 integer!'
+#    parList = ['amplitude', 'center', 'sigma']
+#    bouList = ['amplitude_bounds', 'center_bounds', 'sigma_bounds']
+#
+#    # Check the parameters
+#    for kw in kwargs:
+#        if kw not in parList + bouList:
+#            raise KeyError('{0} is not recognized!'.format(kw))
+#
+#    # Generate the model
+#    if n > 1:
+#        model = Line_Gaussian(name='{0}: 0'.format(line_name))
+#        for loop in range(n-1):
+#            model += Line_Gaussian(name='{0}: {1}'.format(line_name, loop+1))
+#        model.name = '{0}'.format(line_name)
+#    else:
+#        model = Line_Gaussian(name='{0}'.format(line_name))
+#
+#    # Set the parameters
+#    for kw in parList:
+#        kv = kwargs.get(kw, None)
+#
+#        if kv is not None:
+#            assert isinstance(kv, list), 'We only accept {0} as a list!'.format(kw)
+#            assert len(kv) <= n, 'The length of {0} is larger than n!'.format(kw)
+#
+#            if n > 1:
+#                for loop, v in enumerate(kv):
+#                    model[loop].__setattr__(kw, v)
+#            else:
+#                model.__setattr__(kw, kv[0])
+#
+#    # Set the bounds of the parameters
+#    for kw in bouList:
+#        kv = kwargs.get(kw, None)
+#        pn, pa = kw.split('_')
+#
+#        if isinstance(kv, tuple):
+#            assert len(kv) == 2, 'The {0} should contain 2 elements!'.format(kw)
+#
+#            if n > 1:
+#                for loop in range(n):
+#                    p = model[loop].__getattribute__(pn)
+#                    p.__setattr__(pa, kv)
+#            else:
+#                p = model.__getattribute__(pn)
+#                p.__setattr__(pa, kv)
+#
+#        elif isinstance(kv, list):
+#            assert len(kv) <= n, 'The length of {0} is larger than n!'.format(kw)
+#
+#            if n > 1:
+#                for loop, bou in enumerate(kv):
+#                    p = model[loop].__getattribute__(pn)
+#                    p.__setattr__(pa, bou)
+#            else:
+#                p = model.__getattribute__(pn)
+#                p.__setattr__(pa, kv[0])
+#
+#        elif kv is not None:
+#            raise ValueError('Cannot recognize {0} ({1})'.format(kw, kv))
+#
+#    return model
+#
+#
+#@custom_model
+#def Line_Gaussian_deprecated(x, amplitude=1, center=5000., sigma=200.):
+#    '''
+#    The Gaussian line profile with the sigma as the velocity.
+#
+#    Parameters
+#    ----------
+#    x : array like
+#        Wavelength, units: arbitrary.
+#    amplitude : float
+#        The amplitude of the line profile.
+#    center : float
+#        The central wavelength of the line profile, units: same as x.
+#    sigma : float
+#        The velocity dispersion of the line profile, units: km/s.
+#    '''
+#    #if sigma < 0:
+#    #    raise ValueError('Sigma cannot be negative!')
+#    v = (x - center) / center * ls_km  # convert to velocity (km/s)
+#    fl = amplitude * np.exp(-0.5 * (v / sigma)**2)
+#    return fl
+#
+#
+#class tier_abs_center(object):
+#
+#    def __init__(self, name_fit, name_ref, delta_wave):
+#        '''
+#        Tie the center of the line in an absolute wavelength difference.
+#
+#        Parameters
+#        ----------
+#        name_fit : str
+#            The name of the component to be fitted.
+#        name_ref : str
+#            The name of the component to be tied to.
+#        delta_wave : str
+#            The wavelength difference of the two center. Positive means red to
+#            the reference line.
+#        '''
+#        self._name_fit = name_fit
+#        self._name_ref = name_ref
+#        self._delta_wave = delta_wave
+#
+#    def __repr__(self):
+#        return "<Set the line center of '{0}' is set {1} to the red of '{2}'>".format(self._name_fit, self._delta_wave, self._name_ref)
+#
+#    def __call__(self, model):
+#        return model[self._name_ref].center.value + self._delta_wave
+#
+#
+#class tier_wind_center(object):
+#
+#    def __init__(self, name_fit, name_ref, ratio_names):
+#        '''
+#        Tie the center of wind components relative to the line core component.
+#
+#        Parameters
+#        ----------
+#        name_fit : str
+#            The name of the component to be fitted.
+#        name_ref : str
+#            The name of the component to be tied to.
+#        wavec_fit : str
+#            The name of the component for the reference wavelength
+#        '''
+#        self._name_fit = name_fit
+#        self._name_ref = name_ref
+#        self._ratio_names = ratio_names
+#
+#    def __repr__(self):
+#        return "<Set the line center of '{0}' according to that of '{1}' according to '{2}'>".format(self._name_fit, self._name_ref, self._ratio_names)
+#
+#    def __call__(self, model):
+#        wavec_fit = model[self._ratio_names[0]].center.value
+#        wavec_ref = model[self._ratio_names[1]].center.value
+#        return wavec_fit / wavec_ref * model[self._name_ref].center.value
+#
+#
+#class tier_line_width(object):
+#
+#    def __init__(self, name_fit, name_ref):
+#        self._name_fit = name_fit
+#        self._name_ref = name_ref
+#
+#    def __repr__(self):
+#        return "<Set the line width of '{0}' the same as that of '{1}'>".format(self._name_fit, self._name_ref)
+#
+#    def __call__(self, model):
+#        return model[self._name_ref].stddev.value / model[self._name_ref].mean.value * model[self._name_fit].mean.value
+#
+#
+#class tier_line_mean(object):
+#
+#    def __init__(self, name_fit, name_ref, wavec_fit, wavec_ref):
+#        self._name_fit = name_fit
+#        self._name_ref = name_ref
+#        self._wavec_fit = wavec_fit
+#        self._wavec_ref = wavec_ref
+#
+#    def __repr__(self):
+#        return "<Set the line center of '{0}' ({2}) according to that of '{1}' ({3})>".format(self._name_fit, self._name_ref, self._wavec_fit, self._wavec_ref)
+#
+#    def __call__(self, model):
+#        return self._wavec_fit / self._wavec_ref * model[self._name_ref].mean.value

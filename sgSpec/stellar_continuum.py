@@ -2,6 +2,8 @@ import os
 import numpy as np
 from astropy.modeling.models import custom_model
 from scipy.ndimage import gaussian_filter
+from astropy.modeling.core import Fittable1DModel
+from astropy.modeling.parameters import Parameter
 
 ls_km = 2.99792458e5  # km/s
 pathList = os.path.abspath(__file__).split("/")
@@ -31,8 +33,7 @@ flux_even_300myr = np.exp(logf_even_300myr)
 flux_even_300myr /= np.max(flux_even_300myr)
 
 
-@custom_model
-def stellar_11Gyr(x, fmax=1, sigma=100, z=0):
+class stellar_11Gyr(Fittable1DModel):
     '''
     The stellar continuum with 11 Gyr single stellar population.
 
@@ -52,19 +53,29 @@ def stellar_11Gyr(x, fmax=1, sigma=100, z=0):
     flux : array like
         The SED flux of the stellar continuum, units: unit: per Angstrom.
     '''
-    x = x / (1 + z)
-    assert (np.min(x) >= wave_even_11gyr[0]) & (np.max(x) <= wave_even_11gyr[-1]), \
-           'The wavelength is out of the supported range ({0:.0f}-{1:.0f})!'.format(wave_even_11gyr[0], wave_even_11gyr[-1])
-    s = sigma / ls_km
-    nsig = s / (logw_even_11gyr[1] - logw_even_11gyr[0])
-    flux_conv = gaussian_filter(flux_even_11gyr, nsig)
-    flux = np.interp(x, wave_even_11gyr, fmax * flux_conv)
-    return flux
+    fmax = Parameter(default=1, bounds=(0, None))
+    sigma = Parameter(default=200, bounds=(20, 10000))
+    z = Parameter(default=0, bounds=(0, 10))
 
-@custom_model
-def stellar_300Myr(x, fmax=1, sigma=100, z=0):
+    @staticmethod
+    def evaluate(x, fmax, sigma, z):
+        '''
+        Stellar (11 Gyr) model function.
+        '''
+        x = x / (1 + z)
+        assert (np.min(x) >= wave_even_11gyr[0]) & (np.max(x) <= wave_even_11gyr[-1]), \
+               'The wavelength is out of the supported range ({0:.0f}-{1:.0f})!'.format(wave_even_11gyr[0], wave_even_11gyr[-1])
+        s = sigma / ls_km
+        nsig = s / (logw_even_11gyr[1] - logw_even_11gyr[0])
+        flux_conv = gaussian_filter(flux_even_11gyr, nsig)
+        f = np.interp(x, wave_even_11gyr, fmax * flux_conv)
+
+        return f
+
+
+class stellar_300Myr(Fittable1DModel):
     '''
-    The stellar continuum with 300 Myr single stellar population.
+    The stellar continuum with 11 Gyr single stellar population.
 
     Parameters
     ----------
@@ -82,11 +93,82 @@ def stellar_300Myr(x, fmax=1, sigma=100, z=0):
     flux : array like
         The SED flux of the stellar continuum, units: unit: per Angstrom.
     '''
-    x = x / (1 + z)
-    assert (np.min(x) >= wave_even_300myr[0]) & (np.max(x) <= wave_even_300myr[-1]), \
-           'The wavelength is out of the supported range ({0:.0f}-{1:.0f})!'.format(wave_even_300myr[0], wave_even_300myr[-1])
-    s = sigma / ls_km
-    nsig = s / (logw_even_300myr[1] - logw_even_300myr[0])
-    flux_conv = gaussian_filter(flux_even_300myr, nsig)
-    flux = np.interp(x, wave_even_300myr, fmax * flux_conv)
-    return flux
+    fmax = Parameter(default=1, bounds=(0, None))
+    sigma = Parameter(default=200, bounds=(20, 10000))
+    z = Parameter(default=0, bounds=(0, 10))
+
+    @staticmethod
+    def evaluate(x, fmax, sigma, z):
+        '''
+        Stellar (300 Myr) model function.
+        '''
+        x = x / (1 + z)
+        assert (np.min(x) >= wave_even_300myr[0]) & (np.max(x) <= wave_even_300myr[-1]), \
+               'The wavelength is out of the supported range ({0:.0f}-{1:.0f})!'.format(wave_even_300myr[0], wave_even_300myr[-1])
+        s = sigma / ls_km
+        nsig = s / (logw_even_300myr[1] - logw_even_300myr[0])
+        flux_conv = gaussian_filter(flux_even_300myr, nsig)
+        f = np.interp(x, wave_even_300myr, fmax * flux_conv)
+
+        return f
+
+
+#@custom_model
+#def stellar_11Gyr(x, fmax=1, sigma=100, z=0):
+#    '''
+#    The stellar continuum with 11 Gyr single stellar population.
+#
+#    Parameters
+#    ----------
+#    x : array like
+#        Wavelength, units: Angstrom.
+#    fmax : float
+#        The maximum flux of the stellar continuum.
+#    sigma : float
+#        The velocity dispersion, units: km s^-1.
+#    z : float
+#        The redshift.
+#
+#    Returns
+#    -------
+#    flux : array like
+#        The SED flux of the stellar continuum, units: unit: per Angstrom.
+#    '''
+#    x = x / (1 + z)
+#    assert (np.min(x) >= wave_even_11gyr[0]) & (np.max(x) <= wave_even_11gyr[-1]), \
+#           'The wavelength is out of the supported range ({0:.0f}-{1:.0f})!'.format(wave_even_11gyr[0], wave_even_11gyr[-1])
+#    s = sigma / ls_km
+#    nsig = s / (logw_even_11gyr[1] - logw_even_11gyr[0])
+#    flux_conv = gaussian_filter(flux_even_11gyr, nsig)
+#    flux = np.interp(x, wave_even_11gyr, fmax * flux_conv)
+#    return flux
+
+#@custom_model
+#def stellar_300Myr(x, fmax=1, sigma=100, z=0):
+#    '''
+#    The stellar continuum with 300 Myr single stellar population.
+#
+#    Parameters
+#    ----------
+#    x : array like
+#        Wavelength, units: Angstrom.
+#    fmax : float
+#        The maximum flux of the stellar continuum.
+#    sigma : float
+#        The velocity dispersion, units: km s^-1.
+#    z : float
+#        The redshift.
+#
+#    Returns
+#    -------
+#    flux : array like
+#        The SED flux of the stellar continuum, units: unit: per Angstrom.
+#    '''
+#    x = x / (1 + z)
+#    assert (np.min(x) >= wave_even_300myr[0]) & (np.max(x) <= wave_even_300myr[-1]), \
+#           'The wavelength is out of the supported range ({0:.0f}-{1:.0f})!'.format(wave_even_300myr[0], wave_even_300myr[-1])
+#    s = sigma / ls_km
+#    nsig = s / (logw_even_300myr[1] - logw_even_300myr[0])
+#    flux_conv = gaussian_filter(flux_even_300myr, nsig)
+#    flux = np.interp(x, wave_even_300myr, fmax * flux_conv)
+#    return flux
