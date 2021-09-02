@@ -10,8 +10,7 @@ ls_km = 2.99792458e5  # km/s
 FLOAT_EPSILON = float(np.finfo(np.float32).tiny)
 
 
-__all__ = ['Line_Gaussian', 'Line_GaussHermite',
-           'get_line_multigaussian', 'get_line_gausshermite',
+__all__ = ['Line_Gaussian', 'Line_GaussHermite', 'get_line_multigaussian',
            'gen_o3doublet_gauss', 'gen_o3doublet_gausshermite',
            'fix_profile_multigauss', 'fix_profile_gausshermite',
            'duplicate_line', 'find_line_peak', 'line_fwhm',
@@ -642,7 +641,8 @@ def line_fwhm(model, x0, x1, x0_limit=None, x1_limit=None, fwhm_disp=None):
     x0_limit, x1_limit (optional) : floats
         The left and right boundaries of the search.
     fwhm_disp (optional) : float
-        The instrumental dispersion that should be removed from the FWHM.
+        The instrumental dispersion that should be removed from the FWHM, units
+        following the wavelength.
 
     Returns
     -------
