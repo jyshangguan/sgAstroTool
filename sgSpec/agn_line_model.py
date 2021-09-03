@@ -133,9 +133,9 @@ def gen_o3doublet_gausshermite(amplitude=1, dv=0, sigma=200, h3=0, h4=0, bounds=
     if bounds.get('sigma', None) is None:
         bounds['sigma'] = (0, 1000)
     if bounds.get('h3', None) is None:
-        bounds['h3'] = (-0.5, 0.5)
+        bounds['h3'] = (-0.4, 0.4)
     if bounds.get('h4', None) is None:
-        bounds['h4'] = (-0.5, 0.5)
+        bounds['h4'] = (-0.4, 0.4)
 
     nl_o31 = Line_GaussHermite(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wave_vac_OIII_5007, name='[OIII]5007', bounds=bounds)
     nl_o32 = Line_GaussHermite(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wave_vac_OIII_4959, name='[OIII]4959', bounds=bounds)
@@ -565,7 +565,7 @@ class tier_abs_dv(object):
         self._name_ref = name_ref
 
     def __repr__(self):
-        return "<Set the velocity offset of '{0}' to that of '{2}'>".format(self._name_fit, self._name_ref)
+        return "<Set the velocity offset of '{0}' to that of '{1}'>".format(self._name_fit, self._name_ref)
 
     def __call__(self, model):
         return model[self._name_ref].dv.value
