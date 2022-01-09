@@ -103,7 +103,7 @@ def gen_o3doublet_gauss(ngauss, amplitude, dv, sigma, bounds=None, amplitude_rat
 
 
 def gen_o3doublet_gausshermite(amplitude=1, dv=0, sigma=200, h3=0, h4=0, bounds=None, amplitude_ratio=2.98,
-                               fix_amplitude=False, fix_dv=False, fix_sigma=False, fix_h3=False, fix_h4=False):
+                               label=None):
     '''
     Generate the [OIII] 4959, 5007 doublet with Gauss-Hermite function.
 
@@ -137,19 +137,26 @@ def gen_o3doublet_gausshermite(amplitude=1, dv=0, sigma=200, h3=0, h4=0, bounds=
     if bounds.get('h4', None) is None:
         bounds['h4'] = (-0.4, 0.4)
 
-    nl_o31 = Line_GaussHermite(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wave_vac_OIII_5007, name='[OIII]5007', bounds=bounds)
-    nl_o32 = Line_GaussHermite(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wave_vac_OIII_4959, name='[OIII]4959', bounds=bounds)
+    if label is None:
+        name_o31 = '[OIII]5007'
+        name_o32 = '[OIII]4959'
+    else:
+        name_o31 = '[OIII]5007:{0}'.format(label)
+        name_o32 = '[OIII]4959:{0}'.format(label)
+    
+    nl_o31 = Line_GaussHermite(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wave_vac_OIII_5007, name=name_o31, bounds=bounds)
+    nl_o32 = Line_GaussHermite(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wave_vac_OIII_4959, name=name_o32, bounds=bounds)
 
     # Tie the profiles
-    nl_o3 = fix_profile_gausshermite(nl_o31 + nl_o32, '[OIII]5007', '[OIII]4959')
+    nl_o3 = fix_profile_gausshermite(nl_o31 + nl_o32, name_o31, name_o32)
 
     # Tie the amplitudes
-    nl_o3['[OIII]4959'].amplitude.tied = tier_line_ratio('[OIII]4959', '[OIII]5007', ratio=amplitude_ratio)
-    nl_o3['[OIII]4959'].amplitude.value = nl_o3['[OIII]4959'].amplitude.tied(nl_o3)
+    nl_o3[name_o32].amplitude.tied = tier_line_ratio(name_o32, name_o31, ratio=amplitude_ratio)
+    nl_o3[name_o32].amplitude.value = nl_o3[name_o32].amplitude.tied(nl_o3)
 
     # Tie the dv
-    nl_o3['[OIII]4959'].dv.tied = tier_abs_dv('[OIII]4959', '[OIII]5007')
-    nl_o3['[OIII]4959'].dv.value = nl_o3['[OIII]4959'].dv.tied(nl_o3)
+    nl_o3[name_o32].dv.tied = tier_abs_dv(name_o32, name_o31)
+    nl_o3[name_o32].dv.value = nl_o3[name_o32].dv.tied(nl_o3)
 
     return nl_o3
 
@@ -184,7 +191,7 @@ def fix_profile_multigauss(model, name_ref, name_fix):
     elif ncomp_fix == 0:
         raise KeyError('The model does not consist {0}'.format(name_fix))
     elif ncomp_ref != ncomp_fix:
-        raise KeyError('The model components does not match!')
+        raise KeyError('The model components does not match ({0}, {1})!'.format(ncomp_ref, ncomp_fix))
 
     name_ref_0 = '{0}: 0'.format(name_ref)
     name_fix_0 = '{0}: 0'.format(name_fix)
@@ -410,28 +417,80 @@ class Line_GaussHermite(Fittable1DModel):
     sigma = Parameter(default=200, bounds=(20, 10000))
     h3 = Parameter(default=0, bounds=(-0.4, 0.4))
     h4 = Parameter(default=0, bounds=(-0.4, 0.4))
-
     wavec = Parameter(default=5000, fixed=True)
-    clip = Parameter(default=1, fixed=True)
+    
+    def __init__(self, amplitude=amplitude, dv=dv, sigma=sigma,
+                 h3=h3, h4=h4, wavec=wavec, clip=True, **kwargs):
+        
+        self._clip = clip
+        super().__init__(amplitude=amplitude, dv=dv, sigma=sigma, h3=h3, h4=h4, wavec=wavec,
+                         **kwargs)
 
-    @staticmethod
-    def evaluate(x, amplitude, dv, sigma, h3, h4, wavec, clip):
-        """
+    def evaluate(self, x, amplitude, dv, sigma, h3, h4, wavec):
+        '''
         GaussHermite model function.
-        """
+        '''
 
         v = (x - wavec) / wavec * ls_km  # convert to velocity (km/s)
         w = (v - dv)/ sigma
 
-        G = amplitude / np.sqrt(2 * np.pi) / sigma * np.exp(-0.5 * w**2)
+        G = amplitude * np.exp(-0.5 * w**2)
         H3 = (2 * w**3 - 3 * w) / 3**0.5
         H4 = (4 * w**4 - 12 * w**2 + 3) / 24**0.5
         f = G * (1 + h3 * H3 + h4 * H4)
 
-        if clip == 1:
+        if self._clip == 1:
             f[f < 0] = 0
 
         return f
+
+#class Line_GaussHermite(Fittable1DModel):
+#    '''
+#    The line profile as a fourth-order Gauss–Hermite function.
+#
+#    Parameters
+#    ----------
+#    x : array like
+#        Wavelength, units: arbitrary.
+#    amplitude : float
+#        The amplitude of the line profile.
+#    dv : float
+#        The velocity of the central line offset from wavec, units: km/s.
+#    sigma : float
+#        The velocity dispersion of the line profile, units: km/s.
+#    wavec : float
+#        The central wavelength of the line profile, units: same as x.
+#    clip : bool (default: False)
+#        Whether to replace the negative value to 0.
+#    '''
+#
+#    amplitude = Parameter(default=1, bounds=(0, None))
+#    dv = Parameter(default=0, bounds=(-2000, 2000))
+#    sigma = Parameter(default=200, bounds=(20, 10000))
+#    h3 = Parameter(default=0, bounds=(-0.4, 0.4))
+#    h4 = Parameter(default=0, bounds=(-0.4, 0.4))
+#
+#    wavec = Parameter(default=5000, fixed=True)
+#    clip = Parameter(default=1, fixed=True)
+#
+#    @staticmethod
+#    def evaluate(x, amplitude, dv, sigma, h3, h4, wavec, clip):
+#        """
+#        GaussHermite model function.
+#        """
+#
+#        v = (x - wavec) / wavec * ls_km  # convert to velocity (km/s)
+#        w = (v - dv)/ sigma
+#
+#        G = amplitude * np.exp(-0.5 * w**2)
+#        H3 = (2 * w**3 - 3 * w) / 3**0.5
+#        H4 = (4 * w**4 - 12 * w**2 + 3) / 24**0.5
+#        f = G * (1 + h3 * H3 + h4 * H4)
+#
+#        if clip == 1:
+#            f[f < 0] = 0
+#
+#        return f
 
 
 class extinction_ccm89(Fittable1DModel):
