@@ -5,13 +5,21 @@ from astropy.modeling.models import custom_model
 from scipy.ndimage.filters import gaussian_filter1d
 from astropy.modeling.core import Fittable1DModel
 from astropy.modeling.parameters import Parameter
+from sys import platform
+
+if platform == "linux" or platform == "linux2":  # Linux
+    splitter = '/'
+elif platform == "darwin":  # Mac
+    splitter = '/'
+elif platform == "win32":  # Windows
+    splitter = '\\'
 
 __all__ = ['IronTemplate']
 
-pathList = os.path.abspath(__file__).split("/")
-package_path = '/'.join(pathList[:-1])
+pathList = os.path.abspath(__file__).split(splitter)
+package_path = splitter.join(pathList[:-1])
 
-irontemp = Table.read('{0}/data/irontemplate.ipac'.format(package_path),
+irontemp = Table.read('{0}{1}data{1}irontemplate.ipac'.format(package_path, splitter),
                       format='ipac')
 wave_temp = irontemp['Spectral_axis'].data
 flux_temp = irontemp['Intensity'].data

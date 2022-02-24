@@ -4,15 +4,23 @@ from astropy.modeling.models import custom_model
 from scipy.ndimage import gaussian_filter
 from astropy.modeling.core import Fittable1DModel
 from astropy.modeling.parameters import Parameter
+from sys import platform
+
+if platform == "linux" or platform == "linux2":  # Linux
+    splitter = '/'
+elif platform == "darwin":  # Mac
+    splitter = '/'
+elif platform == "win32":  # Windows
+    splitter = '\\'
 
 ls_km = 2.99792458e5  # km/s
-pathList = os.path.abspath(__file__).split("/")
-package_path = '/'.join(pathList[:-1])
+pathList = os.path.abspath(__file__).split(splitter)
+package_path = splitter.join(pathList[:-1])
 
 __all__ = ['stellar_11Gyr', 'stellar_300Myr']
 
 
-spec_11gyr = np.loadtxt('{0}/data/sed_bc03_11Gyr.dat'.format(package_path))
+spec_11gyr = np.loadtxt('{0}{1}data{1}sed_bc03_11Gyr.dat'.format(package_path, splitter))
 wave_11gyr = spec_11gyr[:, 0]
 flux_11gyr = spec_11gyr[:, 1]
 logw_11gyr = np.log(wave_11gyr)
@@ -22,7 +30,7 @@ wave_even_11gyr = np.exp(logw_even_11gyr)
 flux_even_11gyr = np.exp(logf_even_11gyr)
 flux_even_11gyr /= np.max(flux_even_11gyr)
 
-spec_300myr = np.loadtxt('{0}/data/sed_bc03_300Myr.dat'.format(package_path))
+spec_300myr = np.loadtxt('{0}{1}data{1}sed_bc03_300Myr.dat'.format(package_path, splitter))
 wave_300myr = spec_300myr[:, 0]
 flux_300myr = spec_300myr[:, 1]
 logw_300myr = np.log(wave_300myr)
