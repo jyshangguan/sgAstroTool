@@ -10,7 +10,7 @@ class linearfit(object):
     A fitter of a straight line.
     '''
     def __init__(self, x, y, xerr=None, yerr=None, fix_a=None, fix_b=None, fix_s=None,
-                 prior_a=[-5, 5], prior_b=[-5, 5], prior_s=[0, 5]):
+                 prior_a=[-5, 5], prior_b=[-5, 5], prior_s=[0, 5], x_ref=None, y_ref=None):
         '''
         '''
         parname_all = ['a', 'b', 's']
@@ -37,12 +37,20 @@ class linearfit(object):
         self._parname_all = parname_all
         self._parname_fit = parname_fit
             
+        if x_ref is None:
+            self._xref = np.mean(x)
+        else:
+            self._xref = x_ref
+            
+        if y_ref is None:
+            self._yref = np.mean(y)
+        else:
+            self._yref = y_ref
+            
         self.x = x
         self.y = y
-        self._xmed = np.mean(x)
-        self._ymed = np.mean(y)
-        self._x_fit = x - self._xmed
-        self._y_fit = y - self._ymed
+        self._x_fit = x - self._xref
+        self._y_fit = y - self._yref
         
         if xerr is None:
             self.xerr = np.zeros_like(x)
@@ -144,6 +152,24 @@ class linearfit(object):
         self._rdict = rdict
         return rdict
     
+    def get_bestfit_intercept(self):
+        '''
+        Get the intercept of the best-fit model.
+        '''
+        pfit = [v['center'] for v in self._rdict.values()]
+        a, b, s = self.get_parlist(pfit)
+        intercept = a + self._yref - b * self._xref
+        return intercept
+
+    def cal_bestfit_model(self, x):
+        '''
+        Calculate the best-fit linear model. 
+        '''
+        pfit = [v['center'] for v in self._rdict.values()]
+        a, b, s = self.get_parlist(pfit)
+        y = a + self._yref + b * (x - self._xref)
+        return y
+    
     def plot_corner(self, **kwargs):
         '''
         Corner plot.
@@ -204,14 +230,14 @@ class linearfit(object):
         a, b, s = self.get_parlist(pfit)
         
         xm = np.linspace(xlim[0], xlim[1], 100)
-        ym = a + self._ymed + b * (xm - self._xmed)
+        ym = a + self._yref + b * (xm - self._xref)
         ax.plot(xm, ym, color=color, lw=2, label=label)
         
         ymList = []
         inds = np.random.randint(len(self.flat_samples), size=100)
         for ind in inds:
             a, b, s = self.get_parlist(self.flat_samples[ind])
-            ymList.append(a + self._ymed + b * (xm - self._xmed))
+            ymList.append(a + self._yref + b * (xm - self._xref))
         ym_low, ym_hig = np.percentile(ymList, q, axis=0)
         ax.fill_between(xm, y1=ym_low, y2=ym_hig, color=color, alpha=alpha)
         return ax

@@ -247,15 +247,19 @@ def fix_profile_gausshermite(model, name_ref, name_fix):
     '''
     assert model.n_submodels > 1, 'There are not additional components to fix!'
 
-    # Tie the sigma
+    # Tie dv
+    model[name_fix].dv.tied = tier_abs_dv(name_fix, name_ref)
+    model[name_fix].dv.value = model[name_fix].dv.tied(model)
+
+    # Tie sigma
     model[name_fix].sigma.tied = tier_line_sigma(name_fix, name_ref)
     model[name_fix].sigma.value = model[name_fix].sigma.tied(model)
 
-    # Tie the h3
+    # Tie h3
     model[name_fix].h3.tied = tier_line_h3(name_fix, name_ref)
     model[name_fix].h3.value = model[name_fix].h3.tied(model)
 
-    # Tie the h4
+    # Tie h4
     model[name_fix].h4.tied = tier_line_h4(name_fix, name_ref)
     model[name_fix].h4.value = model[name_fix].h4.tied(model)
 
