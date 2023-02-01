@@ -408,13 +408,19 @@ class GRAVITY_data(object):
         ncombine : int
             Number of channels to be combined.
         '''
-        colList = ['FLUX', 'FLUXERR', 'FLAG']
+        colList = ['FLUX', 'FLUXDATA', 'FLUXERR', 'FLAG']
 
         for ext in self.get_extensions():
             hdu_data = copy.deepcopy(self.hdul['OI_FLUX', ext].data)
             flag = hdu_data['FLAG']
 
-            flux = np.ma.array(hdu_data['FLUX'], mask=flag)
+            try:
+                flux = np.ma.array(hdu_data['FLUX'], mask=flag)
+                flux_colname = 'FLUX'
+            except:
+                flux = np.ma.array(hdu_data['FLUXDATA'], mask=flag)
+                flux_colname = 'FLUXDATA'
+
             fluxerr = np.ma.array(hdu_data['FLUXERR'], mask=flag)
 
             # Smooth if nsigma is provided
@@ -427,7 +433,7 @@ class GRAVITY_data(object):
             flux_bin, fluxerr_bin = rebin_vis(flux, fluxerr, ncombine)
             flag_bin = rebin_flag(flag, ncombine)
 
-            new_data['FLUX'] = flux_bin
+            new_data[flux_colname] = flux_bin
             new_data['FLUXERR'] = fluxerr_bin
             new_data['FLAG'] = flag_bin
 
