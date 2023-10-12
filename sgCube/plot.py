@@ -15,7 +15,7 @@ import sgSpec as bf
 from .analysis import *
 
 __all__ = ["Plot_Map", "Plot_Line_Diagnose", "Plot_Simple_Diagnose", "Plot_Mom_Maps",
-           "Plot_Channel_Maps", "Plot_Beam", "imshow_wcs", "contour_wcs"]
+           "Plot_Channel_Maps", "Plot_Beam", "imshow_wcs", "contour_wcs", 'get_mom_extent']
 
 stretchDict = {
     "SqrtStretch": SqrtStretch,
@@ -39,10 +39,12 @@ def Plot_Simple_Diagnose(cube, vel_range=[-400, 400], mask=None, mask_kws={}, ma
         mask_m0 = mask
     skyrms = SkyRMS_pixel(m0.value, mask_m0)
     spc_velc, spc_flux = Spectrum_Mask(cube, mask_m0)
+
     #--> Visualize the results
     fig = plt.figure(figsize=(14, 7))
     ax1 = fig.add_axes([0.05, 0.05, 0.45, 0.9])
     ax2 = fig.add_axes([0.58, 0.05, 0.45, 0.9])
+
     #---> Plot the masked mom0 map to make sure the roi is correct.
     if map_vrange is None:
         vmin = None
@@ -54,6 +56,7 @@ def Plot_Simple_Diagnose(cube, vel_range=[-400, 400], mask=None, mask_kws={}, ma
     levels = [i*skyrms for i in contour_levels]
     contour_dict={"map": m0.value, "levels": levels, "kws": {"colors": "k", "linewidths": 2.}}
     Plot_Map(m0, norm=norm, contour_dict=contour_dict, FigAx=(fig, ax1), imshow_interpolation=map_interpolation)
+
     #---> Plot the spectrum and the model fitting
     fltr_nan = np.logical_not(np.isnan(spc_flux))
     spc_velc = spc_velc[fltr_nan]
@@ -62,15 +65,17 @@ def Plot_Simple_Diagnose(cube, vel_range=[-400, 400], mask=None, mask_kws={}, ma
         fltr_vel = (spc_velc.value > spc_velrange[0]) & (spc_velc.value < spc_velrange[1])
         spc_velc = spc_velc[fltr_vel]
         spc_flux = spc_flux[fltr_vel]
+
     if len(spc_flux) > 3: # Analyze the spectrum only when there are enough data
         pldres = Plot_Line_Diagnose(spc_velc, spc_flux, vel_range, do_fit, plot_w20,
                                     plot_w50, FigAx=(fig, ax2), verbose=verbose)
         if do_fit ^ pldres[1]:
             ax2.text(0.05, 0.95, "BusyFit fails", fontsize=24, transform=ax2.transAxes,
                      horizontalalignment='left', verticalalignment='top', backgroundcolor="w")
-        ax2.axvspan(xmin=vel_range[0], xmax=vel_range[1], color="red", ls="--", lw="2.", alpha=0.1, label="Included")
-        ax2.axvline(x=vel_range[0], color="red", ls="--", lw="2.", alpha=0.3)
-        ax2.axvline(x=vel_range[1], color="red", ls="--", lw="2.", alpha=0.3)
+        
+        ax2.axvspan(xmin=vel_range[0], xmax=vel_range[1], color="red", ls="--", lw=2, alpha=0.1, label="Included")
+        ax2.axvline(x=vel_range[0], color="red", ls="--", lw=2, alpha=0.3)
+        ax2.axvline(x=vel_range[1], color="red", ls="--", lw=2, alpha=0.3)
         ax2.legend(fontsize=18)
     else:
         ax2.text(0.33, 0.53, "No spectral data...", fontsize=24, transform=ax2.transAxes,
@@ -81,7 +86,7 @@ def Plot_Simple_Diagnose(cube, vel_range=[-400, 400], mask=None, mask_kws={}, ma
 
 def Plot_Mom_Maps(m0, m1, m2, norm0=None, norm1=None, norm2=None, contour_dict={},
                   map_vrange=[None, None], vperc1=[10, 90], vperc2=[20, 99], map_interpolation="none",
-                  xlim=None, ylim=None):
+                  xlim=None, ylim=None, cmap0='viridis', cmap1='viridis', cmap2='viridis'):
     """
     Plot of the moment maps.
     """
@@ -95,7 +100,7 @@ def Plot_Mom_Maps(m0, m1, m2, norm0=None, norm1=None, norm2=None, contour_dict={
     if norm0 is None:
         norm0 = ImageNormalize(stretch=AsinhStretch(), vmin=map_vrange[0], vmax=map_vrange[1])
     Plot_Map(m0, norm=norm0, contour_dict=contour_dict, FigAx=(fig, ax1), imshow_interpolation=map_interpolation,
-             xlim=xlim, ylim=ylim)
+             xlim=xlim, ylim=ylim, cmap=cmap0)
     ax1.text(0.05, 0.95, "Moment 0", fontsize=24, transform=ax1.transAxes,
              horizontalalignment='left', verticalalignment='top', backgroundcolor="w")
     #-> Plot mom1
@@ -105,7 +110,7 @@ def Plot_Mom_Maps(m0, m1, m2, norm0=None, norm1=None, norm2=None, contour_dict={
         norm1 = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     fig, ax2, im2 = Plot_Map(m1, norm=norm1, contour_dict=contour_dict, beam_on=False,
                              FigAx=(fig, ax2), imshow_interpolation=map_interpolation,
-                             xlim=xlim, ylim=ylim)
+                             xlim=xlim, ylim=ylim, cmap=cmap1)
     ax2.set_ylabel("")
     ax2.set_yticklabels([])
     cb2 = fig.colorbar(im2, cax=ca2, orientation="vertical")
@@ -121,7 +126,7 @@ def Plot_Mom_Maps(m0, m1, m2, norm0=None, norm1=None, norm2=None, contour_dict={
         norm2 = matplotlib.colors.Normalize(vmin=vmin, vmax=vmax)
     fig, ax3, im3 = Plot_Map(m2, norm=norm2, contour_dict=contour_dict, beam_on=False,
                              FigAx=(fig, ax3), imshow_interpolation=map_interpolation,
-                             xlim=xlim, ylim=ylim)
+                             xlim=xlim, ylim=ylim, cmap=cmap2)
     ax3.set_ylabel("")
     ax3.set_yticklabels([])
     cb3 = fig.colorbar(im3, cax=ca3, orientation="vertical")
@@ -322,7 +327,7 @@ def Plot_Map(mom, cmap="viridis", norm=None, FigAx=None, imshow_interpolation="n
     if beam_on:
         bmaj = mom.beam.major.to(u.arcsec).value
         bmin = mom.beam.minor.to(u.arcsec).value
-        bpa  = mom.beam.pa
+        bpa  = mom.beam.pa.to(u.degree).value
         Plot_Beam(ax, bmaj, bmin, bpa, **beam_kws)
     #-> Tune the axis
     if not plain:
@@ -470,3 +475,21 @@ def contour_wcs(image, wcs, coord_ref=None, plot_units="arcsec", FigAx=None, **k
         kwargs["extent"] = get_extent_ref(wcs, image.shape, coord_ref, origin, plot_units)
     im = ax.contour(image, **kwargs)
     return fig, ax, im
+
+def get_mom_extent(mom):
+    '''
+    Get the extent of the moment map.
+    '''
+    header = mom.wcs.to_header()
+    cr_ra = header["CRVAL1"]
+    cd_ra = header["CDELT1"]
+    cr_dec = header["CRVAL2"]
+    cd_dec = header["CDELT2"]
+    dec0, ra0 = mom.world[0, 0] # Lower left
+    dec1, ra1 = mom.world[-1, -1] # Upper right
+    ra0 = (ra0.value - cr_ra - 0.5 * cd_ra) * 3600
+    ra1 = (ra1.value - cr_ra + 0.5 * cd_ra) * 3600
+    dec0 = (dec0.value - cr_dec - 0.5 * cd_dec) * 3600
+    dec1 = (dec1.value - cr_dec + 0.5 * cd_dec) * 3600
+    extent = [ra0, ra1, dec0, dec1]
+    return extent

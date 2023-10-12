@@ -3,11 +3,11 @@ from __future__ import print_function
 from builtins import range
 import numpy as np
 from astropy.convolution import Gaussian2DKernel
-from astropy.stats import gaussian_fwhm_to_sigma
+from astropy.stats import gaussian_fwhm_to_sigma, mad_std
 import astropy.units as u
 from astropy.wcs import WCS
 from astropy.io import fits
-from photutils import deblend_sources, detect_sources, detect_threshold, source_properties
+from photutils import deblend_sources, detect_sources, detect_threshold  #, source_properties
 from spectral_cube import Projection
 from radio_beam import Beam
 from sgSpec import rms_spectrum, median_spectrum, Gauss_Hermite
@@ -63,9 +63,9 @@ def get_segmentation(data, snr_thrsh=3., npixels=5, kernel=None, deblend=False,
         kernel = Gaussian2DKernel(sigma, x_size=x_size, y_size=y_size)
         kernel.normalize()
     #-> Generate the image segmentation.
-    segm = detect_sources(data, threshold, npixels=npixels, filter_kernel=kernel)
+    segm = detect_sources(data, threshold, npixels=npixels, kernel=kernel)
     if deblend:
-        segm = deblend_sources(data, segm, npixels=npixels, filter_kernel=kernel)
+        segm = deblend_sources(data, segm, npixels=npixels, kernel=kernel)
     return segm
 
 def Mask_Segmentation(data, snr_thrsh=2., wcs=None, source_position=None, segkws={}):
@@ -95,7 +95,13 @@ def Mask_Segmentation(data, snr_thrsh=2., wcs=None, source_position=None, segkws
         mask = segm.data != 0
     else:
         assert not wcs is None # The wcs is necessary to convert the source position
-        ra_pix, dec_pix = wcs.wcs_world2pix([[source_position.ra.deg, source_position.dec.deg]], 1)[0]
+        if wcs.naxis == 2:
+            ra_pix, dec_pix = wcs.wcs_world2pix([[source_position.ra.deg, source_position.dec.deg]], 1)[0]
+        elif wcs.naxis == 3:
+            ra_pix, dec_pix, _ = wcs.wcs_world2pix([[source_position.ra.deg, source_position.dec.deg, 0]], 1)[0]
+        else:
+            raise RuntimeError('Cannot incorporate the wcs dimensions!')
+
         label = segm.data[int(ra_pix), int(dec_pix)]
         if label == 0:
             mask = np.zeros_like(segm.data, dtype=bool)
@@ -286,7 +292,9 @@ def SkyRMS_pixel(data, mask=None, verbose=False):
         mask = np.zeros_like(data, dtype=bool)
     else:
         assert data.shape == mask.shape
-    rms = np.std(data[~mask])
+    #rms = np.std(data[~mask])
+    rms = mad_std(data[~mask])
+
     if verbose:
         print("The shape of the data is: {0}".format(data.shape))
         print("There are {0} pixels used!".format(np.sum(~mask)))
