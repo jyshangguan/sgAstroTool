@@ -16,7 +16,8 @@ import numpy as np
 from numpy.random import randn
 #from photutils import aperture_photometry, CircularAperture, CircularAnnulus
 from photutils import DAOStarFinder, deblend_sources, detect_sources, detect_threshold
-from photutils import EllipticalAperture, CircularAperture, source_properties
+from photutils import EllipticalAperture, CircularAperture
+# from photutils import source_properties
 import warnings
 
 __all__ = ["Background_Fit_Polynomial", "Segmentation_Remove_Circle",

@@ -4,7 +4,7 @@ import pysynphot as S
 
 __all__ = ["loadBandPass", "averageFnu"]
 
-filter_path = "/Users/shangguan/Softwares/my_module/sgPhot/filters/"
+filter_path = "/Users/shangguan/Softwares/my_module/sgAstroTool/sgPhot/filters/"
 def loadBandPass(filter_name, band_name=None, wave_unit="micron", band_unit="angstrom"):
     """
     Load the bandpass. The filter position and names are obtained and

@@ -2,7 +2,7 @@ from __future__ import division
 from __future__ import print_function
 from builtins import range
 import numpy as np
-from astropy.convolution import Gaussian2DKernel
+from astropy.convolution import Gaussian2DKernel, convolve
 from astropy.stats import gaussian_fwhm_to_sigma, mad_std
 import astropy.units as u
 from astropy.wcs import WCS
@@ -62,10 +62,12 @@ def get_segmentation(data, snr_thrsh=3., npixels=5, kernel=None, deblend=False,
         sigma = nFWHM * gaussian_fwhm_to_sigma #Convert FWHM to sigma
         kernel = Gaussian2DKernel(sigma, x_size=x_size, y_size=y_size)
         kernel.normalize()
+        data = convolve(data, kernel)
+
     #-> Generate the image segmentation.
-    segm = detect_sources(data, threshold, npixels=npixels, kernel=kernel)
+    segm = detect_sources(data, threshold, npixels=npixels)
     if deblend:
-        segm = deblend_sources(data, segm, npixels=npixels, kernel=kernel)
+        segm = deblend_sources(data, segm, npixels=npixels)
     return segm
 
 def Mask_Segmentation(data, snr_thrsh=2., wcs=None, source_position=None, segkws={}):
