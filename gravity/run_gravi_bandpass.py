@@ -3,10 +3,14 @@ from astropy.io import fits
 from astropy.modeling import models, fitting
 from astropy.modeling.core import Fittable1DModel
 from astropy.modeling.parameters import Parameter
+from astropy.modeling.physical_models import BlackBody
+import astropy.units as units
+from astropy.table import Table
 import matplotlib.pyplot as plt
 from scipy.signal import argrelextrema
 from scipy import fft
 from scipy.stats import binned_statistic
+import tqdm
 
 
 baseline_name = ['G12', 'G13', 'G14', 'G23', 'G24', 'G34']
@@ -691,7 +695,7 @@ def Bandpass_SC(filename, extver=11, plot=True, axs=None, opd_no_move=10,
     if wnum_step is None:
         wnum_step = 1 / (opd.max() - opd.min())
 
-    wavenumber = np.arange(1/wave_range[1], 1/wave_range[0], wnum_step)
+    wavenumber = np.arange(1/wave_range[0], 1/wave_range[1], -wnum_step)
     wavenum, bp = convert_vis_to_bandpass(opd, vis, wavenumber)
     bp = np.absolute(bp)
     wave = 1 / wavenumber
@@ -767,7 +771,7 @@ def Bandpass_FT(filename, extver=11, plot=True, axs=None, opd_no_move=10,
     if wnum_step is None:
         wnum_step = 1 / (opd.max() - opd.min())
 
-    wavenumber = np.arange(1/wave_range[1], 1/wave_range[0], wnum_step)
+    wavenumber = np.arange(1/wave_range[0], 1/wave_range[1], -wnum_step)
     wavenum, bp = convert_vis_to_bandpass(opd, vis, wavenumber)
     bp = np.absolute(bp)
     wave = 1 / wavenumber
@@ -794,6 +798,99 @@ def Bandpass_FT(filename, extver=11, plot=True, axs=None, opd_no_move=10,
     return wave, bp
 
 
+def correct_lampspec(wave, bp, temperature):
+    '''
+    Correct the bandpass for the lamp spectrum.
+
+    Parameters
+    ----------
+    wave (array-like): The wavelength array.
+    bp (array-like): The bandpass array. It should have [nwave, nbsl, nchn].
+    temperature (float): The temperature of the lamp.
+
+    Returns
+    -------
+    array-like: The corrected bandpass.
+    '''
+    bb = BlackBody(temperature * units.K)
+    bbspec = bb(wave * units.micron)
+    bbspec = bbspec / bbspec.max()
+    bp_corr = bp / bbspec[:, np.newaxis, np.newaxis]
+    bp_corr /= bp_corr.max(axis=0, keepdims=True)
+    return bp_corr
+
+
+def fit_bandpass_gauss(wave, bp, window=0.2, stddev=0.05, plot=False, ax=None, 
+                       data_kwargs=None, model_kwargs=None):
+    '''
+    Fit a Gaussian model to the bandpass and return the FWHM.
+
+    Parameters
+    ----------
+    wave : array
+        Wavelength array
+    bp : array
+        Bandpass array. The data should be [wave, channel].
+    window : float
+        Wavelength window to fit the Gaussian model.
+    stddev : float
+        Initial guess for the standard deviation of the Gaussian model.
+    plot : bool
+        If True, plot the bandpass and the model.
+    ax : matplotlib axis
+        Axis to plot the bandpass and the model.
+    data_kwargs : dict
+        Keyword arguments for the bandpass plot.
+    model_kwargs : dict
+        Keyword arguments for the model plot.
+    
+    Returns
+    -------
+    gList : list
+        List of Gaussian models for each channel.
+    tb : astropy.table.Table
+        Table of the wavelength and FWHM for each channel.
+    '''
+    g_init = models.Gaussian1D(amplitude=1, stddev=stddev)
+    fitter = fitting.LevMarLSQFitter()
+
+    wList = []
+    fwhm = []
+    gList = []
+    for nc in range(bp.shape[-1]):
+        wcen = wave[np.argmax(bp[:, nc])]
+        wmin = wcen - window / 2
+        wmax = wcen + window / 2
+        fltr = (wave > wmin) & (wave < wmax)
+        x_fit = wave[fltr]
+        y_fit = bp[fltr, nc]
+
+        g_init.mean = wcen
+        gList.append(fitter(g_init, x_fit, y_fit))
+        fwhm.append(gList[-1].fwhm)
+        wList.append(np.average(wave, weights=bp[:, nc]))
+
+    chn = [f'CH{ii}' for ii in range(bp.shape[-1])]
+    tb = Table([chn, wList, fwhm], names=('Channel', 'Wavelength', 'FWHM'))
+    tb['Wavelength'].format = '%.3f'
+    tb['FWHM'].format = '%.3f'
+
+    if plot:
+        if ax is None:
+            fig, ax = plt.subplots(1, 1, figsize=(16, 8))
+
+        if data_kwargs is None:
+            data_kwargs = dict(marker='.', lw=2)
+        if model_kwargs is None:
+            model_kwargs = dict(color='C3', lw=1)
+
+        for nc in range(bp.shape[-1]):
+            ax.plot(wave, bp[:, nc], **data_kwargs)
+            ax.plot(wave, gList[nc](wave), **model_kwargs)
+        ax.minorticks_on()
+    return gList, tb
+
+
 if __name__ == '__main__':
     import glob
     import argparse
@@ -813,8 +910,10 @@ if __name__ == '__main__':
                         help='The minimum wavelength. Default is 1.9 micron')
     parser.add_argument('--wmax', default=2.6, 
                         help='The maximum wavelength. Default is 2.6 micron')
-    parser.add_argument('--wnum_step', default=0.002, 
-                        help='The step size of the wavenumber. Default is 0.002 micron^-1')
+    parser.add_argument('--wnum_step', default=0.001, 
+                        help='The step size of the wavenumber. Default is 0.001 micron^-1')
+    parser.add_argument('-t', '--temperature', default=800,
+                        help='The blackbody temperature of the lamp. Default is 800 K')
 
     args = parser.parse_args()
 
@@ -823,8 +922,9 @@ if __name__ == '__main__':
     extver = int(args.extver)
     plot=args.plot
     wave_range = [args.wmin, args.wmax]
-    wnum_step = args.wnum_step
-        
+    wnum_step = float(args.wnum_step)
+    temperature = float(args.temperature)
+
     if fiber_type not in ['SC', 'FT']:
         raise ValueError(f'The fiber type ({fiber_type}) is not recognized.')
 
@@ -833,12 +933,25 @@ if __name__ == '__main__':
             fits_file_list = glob.glob('*astroreduced.fits')
         else:
             fits_file_list = glob.glob('*p2vmred.fits')
+    fits_file_list.sort()
+
+    
+    print(f'Found {len(fits_file_list)} files:')
+    for f in fits_file_list:
+        print(f'  {f}')
+    print(f'Fiber type: {fiber_type}')
+    print(f'Polarization: extver={extver}')
+    print(f'Plot: {plot}')
+    print(f'Wavelength range: {wave_range}')
+    print(f'Wavenumber step: {wnum_step} micron^-1')
+    print(f'Temperature: {temperature} K')
+        
 
     if plot:
         pdf = PdfPages(f'bandpass_{extver}_{fiber_type}.pdf')
 
     bpList = []
-    for loop, f in enumerate(fits_file_list):
+    for loop, f in tqdm.tqdm(enumerate(fits_file_list)):
         fn = f.split('/')[-1][:-5]
 
         if fiber_type == 'SC':
@@ -848,22 +961,36 @@ if __name__ == '__main__':
             wave, bp = Bandpass_FT(f, extver=extver, wave_range=wave_range, 
                                    wnum_step=wnum_step, plot=plot)
         if plot:
-            #plt.savefig(f'bandpass_{extver}_{fiber_type}_{fn}.pdf', bbox_inches='tight')
             pdf.savefig()
             plt.close()
 
         bpList.append(bp)
     
     nchn = len(wave)
-    bp_ave = np.nanmean(bpList, axis=0)
+    bp_ave_bsl = np.nanmean(bpList, axis=0)
+    bp_ave_all = np.nanmean(bp_ave_bsl, axis=1)
+
+    # Correct the lamp spectrum
+    bp_cor_bsl = correct_lampspec(wave, bp_ave_bsl, temperature)
+    bp_cor_all = np.nanmean(bp_cor_bsl, axis=1)
+
 
     # Save the output
     hdr = fits.Header()
     hduList = [fits.PrimaryHDU([1], header=hdr),
                fits.BinTableHDU.from_columns(
-                   [fits.Column(name='WAVELENGTH', format='D', array=wave)]),
-               fits.ImageHDU(name='MEAS_TRANS', data=bp_ave)]
-    hduList[1].header['EXTNAME'] = 'WAVELENGTH'
+                   [fits.Column(name='WAVELENGTH', format='D', array=wave),
+                    fits.Column(name='MEAS_TRANS', format=f'{bp_ave_all.shape[-1]}D', array=bp_ave_all),
+                    fits.Column(name='EFF_TRANS', format=f'{bp_cor_all.shape[-1]}D', array=bp_cor_all)
+                    ]),
+               fits.ImageHDU(name='MEAS_TRANS_BSL', data=bp_ave_bsl),
+               fits.ImageHDU(name='EFF_TRANS_BSL', data=bp_ave_bsl)]
+    hduList[1].header['EXTNAME'] = 'EFF_TRANS'
+    hduList[1].header['TEMPBB'] = (f'{temperature}', 'Lamp blackbody temperature (K)')
+    hduList[1].header['TTYPE2'] = ('MEAS_TRANS', 'Measured bandpass including lamp spectrum')
+    hduList[1].header['TTYPE3'] = ('EFF_TRANS', 'Effective bandpass without lamp spectrum')
+    hduList[2].header['EXTNAME'] = ('MEAS_TRANS_BSL', 'Measured bandpass per baseline, no correction')
+    hduList[3].header['EXTNAME'] = ('EFF_TRANS_BSL', 'Effective bandpass per baseline')
     hdul = fits.HDUList(hduList)
     hdul.writeto(f'bandpass_{extver}_{fiber_type}.fits', overwrite=True)
 
@@ -875,11 +1002,11 @@ if __name__ == '__main__':
         axo.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
         axo.set_xlabel(r"Wavelength ($\mu$m)", fontsize=24, labelpad=20)
         axo.set_ylabel(r"Measured bandpass", fontsize=24, labelpad=32) #
-        axo.set_title(r'Averaged bandpass', fontsize=14, pad=30, color='gray')
+        axo.set_title(r'Averaged bandpass per baseline', fontsize=14, pad=30, color='gray')
         
         for ii, ax in enumerate(axs):
-            for nc in range(bp_ave.shape[-1]):
-                b = bp_ave[:, ii, nc]
+            for nc in range(bp_ave_bsl.shape[-1]):
+                b = bp_ave_bsl[:, ii, nc]
                 ax.plot(wave, b, label=f'ch{nc}', marker='.')
             ax.text(0.01, 0.95, baseline_name[ii], transform=ax.transAxes, 
                     fontsize=16, ha='left', va='top')
@@ -887,4 +1014,29 @@ if __name__ == '__main__':
         ax.set_ylim(-0.1, 1.1)
         pdf.savefig()
         plt.close()
+
+        fig, axs = plt.subplots(2, 1, figsize=(8, 12), sharex=True, sharey=True)
+        fig.subplots_adjust(hspace=0)
+        axo = fig.add_subplot(111, frameon=False) # The out axis
+        axo.tick_params(axis='y', which='both', left=False, labelleft=False)
+        axo.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+        axo.set_xlabel(r"Wavelength ($\mu$m)", fontsize=24, labelpad=20)
+        axo.set_title(r'Averaged bandpass', fontsize=14, pad=30, color='gray')
+
+        ax = axs[0]
+        for nc in range(bp_ave_all.shape[-1]):
+            b = bp_ave_all[:, nc]
+            ax.plot(wave, b, label=f'ch{nc}', marker='.')
+        ax.set_ylabel(r"Measured bandpass", fontsize=24) #
+        
+        ax = axs[1]
+        for nc in range(bp_cor_all.shape[-1]):
+            b = bp_cor_all[:, nc]
+            ax.plot(wave, b, label=f'ch{nc}', marker='.')
+        ax.set_ylabel(fr"Effective bandpass ({temperature:.0f} K)", fontsize=24) #
+
+        ax.minorticks_on()
+        pdf.savefig()
+        plt.close()
+
         pdf.close()
