@@ -11,6 +11,7 @@ from scipy.signal import argrelextrema
 from scipy import fft
 from scipy.stats import binned_statistic
 import tqdm
+import sys
 
 
 baseline_name = ['G12', 'G13', 'G14', 'G23', 'G24', 'G34']
@@ -509,6 +510,10 @@ def average_opd_vis(opd, vis, opd_step=0.1, opd_no_move=10, ref_channel=2):
     opd_min = np.array([opd_shift[:, bsl].min() for bsl in range(nbsl)])
     opd_max = np.array([opd_shift[:, bsl].max() for bsl in range(nbsl)])
     fltr = opd_max > opd_no_move
+
+    if np.sum(fltr) == 0:
+        raise ValueError(f'No baselines have OPD offset more than {opd_no_move} micron!')
+
     opd_min = np.max(opd_min[fltr])
     opd_max = np.min(opd_max[fltr])
 
@@ -945,7 +950,10 @@ if __name__ == '__main__':
     print(f'Wavelength range: {wave_range}')
     print(f'Wavenumber step: {wnum_step} micron^-1')
     print(f'Temperature: {temperature} K')
-        
+
+    if len(fits_file_list) == 0:
+        print('No FITS files found.')
+        sys.exit()     
 
     if plot:
         pdf = PdfPages(f'bandpass_{extver}_{fiber_type}.pdf')
