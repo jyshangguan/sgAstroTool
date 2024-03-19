@@ -342,8 +342,14 @@ def read_FT_from_p2vmred(filename, extver=20, opd_step=0.05, plot=True,
     vis = vis[fltr, :, :]
     gdelay = gdelay[fltr, :]
     opd = opd[fltr, :]
-    opd_bin, vis_bin = average_opd_vis(opd, vis, opd_step=opd_step, 
-                                       opd_no_move=opd_no_move)
+    nchn = vis.shape[-1]
+
+    try:
+        opd_bin, vis_bin = average_opd_vis(opd, vis, opd_step=opd_step, 
+                                           opd_no_move=opd_no_move)
+    except ValueError as e:
+        print(e)
+        opd_bin, vis_bin = None, None
     
     opd_move_flag = np.array([True if np.std(opd[:, bsl]) > opd_no_move else False for bsl in range(nbsl)])
 
@@ -390,7 +396,7 @@ def read_FT_from_p2vmred(filename, extver=20, opd_step=0.05, plot=True,
 
     data = dict(time=time, opd=opd, vis=vis, axs=axs, 
                 opd_move_flag=opd_move_flag, 
-                opd_bin=opd_bin, vis_bin=vis_bin)
+                opd_bin=opd_bin, vis_bin=vis_bin, nchn=nchn)
     return data
 
 
@@ -419,6 +425,7 @@ def read_SC_from_astroreduced(filename, extver=11, plot=True, axs=None,
     vfac = d['OI_VIS', extver].data['V_FACTOR'].reshape(time.shape[0], nbsl, -1)
     vis = d['OI_VIS', extver].data['VISDATA'].reshape(time.shape[0], nbsl, -1) / np.sqrt(f1f2)
     vamp = np.absolute(vis) / np.sqrt(vfac)
+    nchn = vis.shape[-1]
 
     gd_disp = d['OI_VIS', extver].data['GDELAY_DISP'].reshape(time.shape[0], nbsl) * 1e6
     gd_ft = d['OI_VIS', extver].data['GDELAY_FT'].reshape(time.shape[0], nbsl) * 1e6
@@ -475,7 +482,7 @@ def read_SC_from_astroreduced(filename, extver=11, plot=True, axs=None,
         axs[0, 1].set_yticklabels([])
 
     data = dict(time=time, opd=opd, vis=vis, gd_disp=gd_disp, vamp=vamp, 
-                opdm=opdm, gd_ft=gd_ft, opd_disp=opd_disp, 
+                nchn=nchn, opdm=opdm, gd_ft=gd_ft, opd_disp=opd_disp, 
                 opd_met_fc=opd_met_fc, opd_move_flag=opd_move_flag, 
                 axs=axs)
     return data
@@ -692,7 +699,7 @@ def Bandpass_SC(filename, extver=11, plot=True, axs=None, opd_no_move=10,
     vis = data['vis']
     opd = data['opd']
     opd_move_flag = data['opd_move_flag']
-    nchn = vis.shape[2]
+    nchn = data['nchn']
 
     if wave_range is None:
         wave_range = [1.9, 2.6]
@@ -768,8 +775,16 @@ def Bandpass_FT(filename, extver=11, plot=True, axs=None, opd_no_move=10,
     vis = data['vis_bin']
     opd = data['opd_bin']
     opd_move_flag = data['opd_move_flag']
-    nchn = vis.shape[2]
+    nchn = data['nchn']
 
+    # If there is no useful data
+    if vis is None:
+        ax = axs_bp[0]
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
+        return None, None
+
+    # Otherwise, calculate the bandpass
     if wave_range is None:
         wave_range = [1.9, 2.6]
 
@@ -953,7 +968,7 @@ if __name__ == '__main__':
 
     if len(fits_file_list) == 0:
         print('No FITS files found.')
-        sys.exit()     
+        sys.exit()
 
     if plot:
         pdf = PdfPages(f'bandpass_{extver}_{fiber_type}.pdf')
@@ -972,8 +987,18 @@ if __name__ == '__main__':
             pdf.savefig()
             plt.close()
 
-        bpList.append(bp)
+        if bp is not None:
+            bpList.append(bp)
     
+    if len(bpList) == 0:
+        print('No bandpass derived!')
+
+        if plot:
+            pdf.close()
+        
+        sys.exit()
+        
+    # Calculate the average bandpass
     nchn = len(wave)
     bp_ave_bsl = np.nanmean(bpList, axis=0)
     bp_ave_all = np.nanmean(bp_ave_bsl, axis=1)
