@@ -1,6 +1,10 @@
 from __future__ import division
 import numpy as np
-import pysynphot as S
+
+try:
+    import pysynphot as S
+except ImportError:
+    S = None
 
 __all__ = ["loadBandPass", "averageFnu"]
 
@@ -30,6 +34,9 @@ def loadBandPass(filter_name, band_name=None, wave_unit="micron", band_unit="ang
     -----
     None.
     """
+    if S is None:
+        raise ImportError("pysynphot is not installed!")
+
     bp_array = np.genfromtxt(filter_path+"{0}.dat".format(filter_name))
     bp = S.ArrayBandpass(bp_array[:, 0], bp_array[:, 1], waveunits=wave_unit,
                          name=band_name)
@@ -68,6 +75,9 @@ def averageFnu(wavelength, flux, bandpass, wave_units="micron", tol=1e-3, QuietM
     -----
     None.
     """
+    if S is None:
+        raise ImportError("pysynphot is not installed!")
+
     bandpass.convert(wave_units)
     #-> Find the overlaping wavelength regime.
     wave_bp = bandpass.wave

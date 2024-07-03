@@ -70,9 +70,9 @@ class GRAVITY_data(object):
 
         self.header = self.hdul[0].header
 
-        if self.header['TELESCOP'] == 'ESO-VLTI-U1234':
+        if (self.header['TELESCOP'] == 'ESO-VLTI-U1234') | (self.header['TELESCOP'] == 'U1234'):
             self.tel = 'UTS'
-        elif self.header['TELESCOP'] == 'ESO-VLTI-A1234':
+        elif (self.header['TELESCOP'] == 'ESO-VLTI-A1234') | (self.header['TELESCOP'] == 'A1234'):
             self.tel = 'ATS'
         else:
             raise KeyError('Cannot recognize TELESCOP: {}!'.format(self.header['TELESCOP']))

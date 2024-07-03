@@ -295,7 +295,7 @@ def SkyRMS_pixel(data, mask=None, verbose=False):
     else:
         assert data.shape == mask.shape
     #rms = np.std(data[~mask])
-    rms = mad_std(data[~mask])
+    rms = mad_std(data[~mask], ignore_nan=True)
 
     if verbose:
         print("The shape of the data is: {0}".format(data.shape))

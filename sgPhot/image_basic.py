@@ -1,13 +1,13 @@
 from __future__ import division
 from __future__ import print_function
-from builtins import range
-from builtins import object
+#from builtins import range
+#from builtins import object
 from astropy.convolution import Gaussian2DKernel
 from astropy.io import fits
 from astropy.modeling import models, fitting
 from astropy.stats import gaussian_fwhm_to_sigma, sigma_clipped_stats
 from astropy.table import Table, Column
-from photutils.utils import make_random_cmap
+
 from astropy.visualization import AsinhStretch
 from astropy.visualization.mpl_normalize import ImageNormalize
 from astropy.wcs import WCS
@@ -19,6 +19,11 @@ from photutils import DAOStarFinder, deblend_sources, detect_sources, detect_thr
 from photutils import EllipticalAperture, CircularAperture
 # from photutils import source_properties
 import warnings
+
+try:
+    from photutils.utils import make_random_cmap
+except ImportError:
+    make_random_cmap = None
 
 __all__ = ["Background_Fit_Polynomial", "Segmentation_Remove_Circle",
            "Props_Remove_Circle", "Mask_Ellipse_Single", "Mask_Ellipse",
