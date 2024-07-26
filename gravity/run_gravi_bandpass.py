@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from scipy.signal import argrelextrema
 from scipy import fft
 from scipy.stats import binned_statistic
+from scipy.ndimage import binary_dilation as dilation
 import tqdm
 import sys
 
@@ -166,6 +167,30 @@ def ifft_F_bandpass(opd, Fbp):
     bp = fft.fftshift(fft.ifft(fft.fftshift(Fbp)))
     wnum = fft.fftshift(fft.fftfreq(len(opd), np.diff(opd)[0]))
     return wnum, bp
+
+
+def self_ref(datinc, ndilate=1):
+    '''
+    Calculate the self-calibrated visibility phase.
+
+    Parameters
+    ----------
+    datinc : array
+        The input incoherent data.
+    ndilate : int
+        The number of dilation iterations.
+
+    Returns
+    -------
+    datcoh : array
+        The self-referenced (coherent) data.
+    '''
+    nl = len(datinc)
+    w = 1. - dilation(np.identity(nl), iterations=ndilate)
+    model = (datinc[:, None] * w).sum(axis=0)
+    model = np.conj(model) / (np.abs(model) + 1e-10)
+    datcoh = datinc * model
+    return datcoh
 
 
 def plot_F_bandpass(opd, Fbp, fig=None, axs=None):
@@ -654,7 +679,8 @@ def non_uniform_fourier_transform(x, y, frequencies):
 
 
 def Bandpass_SC(filename, extver=11, plot=True, axs=None, opd_no_move=10, 
-                ref_channel=7, wave_range=None, wnum_step=None):
+                ref_channel=7, wave_range=None, wnum_step=None, page_size=None,
+                return_complex=False):
     '''
     Read the time, OPD, and visibility data from the astroreduced file.
 
@@ -669,6 +695,7 @@ def Bandpass_SC(filename, extver=11, plot=True, axs=None, opd_no_move=10,
     wave_range (list): The wavelength range. Default is None.
     wnum_step (float; optional): The step size of the wavenumber. 
         If not provided we calculate the step size based on the opd range.
+    page_size (tuple): The size of the page. Default is None.
 
     Returns
     -------
@@ -683,6 +710,9 @@ def Bandpass_SC(filename, extver=11, plot=True, axs=None, opd_no_move=10,
             axo.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
             fn = filename.split('/')[-1]
             axo.set_title(fn, fontsize=14, pad=30, color='gray')
+
+            if page_size is not None:
+                fig.set_size_inches(page_size, forward=True)
 
         axs_data = axs[:, 0:2]
         axs_bp = axs[:, 2]
@@ -709,33 +739,44 @@ def Bandpass_SC(filename, extver=11, plot=True, axs=None, opd_no_move=10,
 
     wavenumber = np.arange(1/wave_range[0], 1/wave_range[1], -wnum_step)
     wavenum, bp = convert_vis_to_bandpass(opd, vis, wavenumber)
-    bp = np.absolute(bp)
-    wave = 1 / wavenumber
 
     for bsl in range(nbsl):
         if not opd_move_flag[bsl]:
             bp[:, bsl, :] = np.nan
         else:
             for chn in range(nchn):
-                bp[:, bsl, chn] /= np.max(bp[:, bsl, chn])
+                bp_ref = self_ref(bp[:, bsl, chn])
+                bp[:, bsl, chn] = bp_ref / np.max(np.absolute(bp_ref))
+
+    if not return_complex:
+        bp = np.absolute(bp)
+    wave = 1 / wavenumber
         
     if plot:
-        axs_bp[0].set_title('Bandpass', fontsize=20)
+        axs_bp[0].set_title(f'Bandpass P{extver}', fontsize=20)
+        colors = plt.cm.coolwarm(np.linspace(0, 1, nchn))
 
         for ii, ax in enumerate(axs_bp):
             for nc in range(nchn):
                 b = bp[:, ii, nc]
-                ax.plot(wave, b, label=f'ch{nc}', marker='.')
+                if return_complex:
+                    ax.plot(wave, b.real, color=colors[nc], label=f'ch{nc}', ls='-')
+                    ax.plot(wave, b.imag, color=colors[nc], ls='--')
+                    ax.set_ylim(-1.1, 1.1)
+                else:
+                    ax.plot(wave, b, color=colors[nc], label=f'ch{nc}', ls='-')
+                    ax.set_ylim(-0.1, 1.1)
+
         ax.minorticks_on()
-        ax.set_ylim(-0.1, 1.1)
-        ax.set_xlabel(r"Wavelength ($\mu$m)", fontsize=24, labelpad=20)
+        ax.set_xlabel(r"Wavelength ($\mu$m)", fontsize=20)
         ax.set_yticklabels([])
         
     return wave, bp
 
 
 def Bandpass_FT(filename, extver=11, plot=True, axs=None, opd_no_move=10, 
-                ref_channel=2, wave_range=None, wnum_step=None):
+                ref_channel=2, wave_range=None, wnum_step=None, page_size=None, 
+                return_complex=False):
     '''
     Read the time, OPD, and visibility data from the p2vmred file.
 
@@ -750,6 +791,7 @@ def Bandpass_FT(filename, extver=11, plot=True, axs=None, opd_no_move=10,
     wave_range (list): The wavelength range. Default is None.
     wnum_step (float; optional): The step size of the wavenumber. 
         If not provided we calculate the step size based on the opd range.
+    page_size (tuple): The size of the page. Default is None.
 
     Returns
     -------
@@ -759,6 +801,9 @@ def Bandpass_FT(filename, extver=11, plot=True, axs=None, opd_no_move=10,
         if axs is None:
             fig, axs = plt.subplots(nbsl, 3, figsize=(12, 12))
             fig.subplots_adjust(hspace=0.02, wspace=0.02)
+
+            if page_size is not None:
+                fig.set_size_inches(page_size, forward=True)
 
         axs_data = axs[:, 0:2]
         axs_bp = axs[:, 2]
@@ -793,26 +838,36 @@ def Bandpass_FT(filename, extver=11, plot=True, axs=None, opd_no_move=10,
 
     wavenumber = np.arange(1/wave_range[0], 1/wave_range[1], -wnum_step)
     wavenum, bp = convert_vis_to_bandpass(opd, vis, wavenumber)
-    bp = np.absolute(bp)
-    wave = 1 / wavenumber
 
     for bsl in range(nbsl):
         if not opd_move_flag[bsl]:
             bp[:, bsl, :] = np.nan
         else:
             for chn in range(nchn):
-                bp[:, bsl, chn] /= np.max(bp[:, bsl, chn])
+                bp_ref = self_ref(bp[:, bsl, chn])
+                bp[:, bsl, chn] = bp_ref / np.max(np.absolute(bp_ref))
+
+    if not return_complex:
+        bp = np.absolute(bp)
+    wave = 1 / wavenumber
         
     if plot:
-        axs_bp[0].set_title('Bandpass', fontsize=20)
+        axs_bp[0].set_title(f'Bandpass P{extver}', fontsize=20)
+        colors = plt.cm.coolwarm(np.linspace(0, 1, nchn))
 
         for ii, ax in enumerate(axs_bp):
             for nc in range(nchn):
                 b = bp[:, ii, nc]
-                ax.plot(wave, b, label=f'ch{nc}', marker='.')
+                #ax.plot(wave, b, label=f'ch{nc}', marker='.')
+                if return_complex:
+                    ax.plot(wave, b.real, color=colors[nc], label=f'ch{nc}', ls='-')
+                    ax.plot(wave, b.imag, color=colors[nc], ls='--')
+                    ax.set_ylim(-1.1, 1.1)
+                else:
+                    ax.plot(wave, b, color=colors[nc], label=f'ch{nc}', ls='-')
+                    ax.set_ylim(-0.1, 1.1)
         ax.minorticks_on()
-        ax.set_ylim(-0.1, 1.1)
-        ax.set_xlabel(r"Wavelength ($\mu$m)", fontsize=24, labelpad=20)
+        ax.set_xlabel(r"Wavelength ($\mu$m)", fontsize=20)
         ax.set_yticklabels([])
         
     return wave, bp
@@ -835,7 +890,13 @@ def correct_lampspec(wave, bp, temperature):
     bb = BlackBody(temperature * units.K)
     bbspec = bb(wave * units.micron)
     bbspec = bbspec / bbspec.max()
-    bp_corr = bp / bbspec[:, np.newaxis, np.newaxis]
+
+    if len(bp.shape) == 3:
+        bp_corr = bp / bbspec[:, np.newaxis, np.newaxis]
+    elif len(bp.shape) == 2:
+        bp_corr = bp / bbspec[:, np.newaxis]
+    else:
+        raise ValueError(f'The dimension of bp ({bp.shape}) is not compatible!')
     bp_corr /= bp_corr.max(axis=0, keepdims=True)
     return bp_corr
 
@@ -922,8 +983,6 @@ if __name__ == '__main__':
                         help='List of FITS files')
     parser.add_argument('-f', '--fiber_type', default='SC', 
                         help='The fiber type. Default is SC')
-    parser.add_argument('-e', '--extver', default=11, 
-                        help='The extension version. Default is 11')
     parser.add_argument('-p', '--plot', action='store_true', default=False,
                         help='Whether to plot the bandpass. Default is False')
     parser.add_argument('--wmin', default=1.9, 
@@ -932,18 +991,27 @@ if __name__ == '__main__':
                         help='The maximum wavelength. Default is 2.6 micron')
     parser.add_argument('--wnum_step', default=0.001, 
                         help='The step size of the wavenumber. Default is 0.001 micron^-1')
+    parser.add_argument('-c', '--color_correction', action='store_true', default=False,
+                        help='Whether to correct the lamp spectrum. Default is False')
     parser.add_argument('-t', '--temperature', default=800,
                         help='The blackbody temperature of the lamp. Default is 800 K')
+    parser.add_argument('-a', '--average_type', default='COMPLEX', 
+                        help='Averaging the complex bandpass if [COMPLEX] is used, while averaging the absolute bandpass if [ABSOLUTE] is used.')
+    parser.add_argument('-d', '--debug', action='store_true', default=False, 
+                        help='Turn on the debugging mode.')
 
     args = parser.parse_args()
 
     fits_file_list = args.fits_files
     fiber_type = args.fiber_type
-    extver = int(args.extver)
     plot=args.plot
     wave_range = [args.wmin, args.wmax]
     wnum_step = float(args.wnum_step)
+    color_correction = args.color_correction
     temperature = float(args.temperature)
+    average_type = args.average_type
+    debug = args.debug
+    page_size = (10, 12)  # A4 size
 
     if fiber_type not in ['SC', 'FT']:
         raise ValueError(f'The fiber type ({fiber_type}) is not recognized.')
@@ -956,120 +1024,395 @@ if __name__ == '__main__':
     fits_file_list.sort()
 
     
-    print(f'Found {len(fits_file_list)} files:')
-    for f in fits_file_list:
-        print(f'  {f}')
     print(f'Fiber type: {fiber_type}')
-    print(f'Polarization: extver={extver}')
     print(f'Plot: {plot}')
     print(f'Wavelength range: {wave_range}')
     print(f'Wavenumber step: {wnum_step} micron^-1')
-    print(f'Temperature: {temperature} K')
+    print(f'Averaging type: {average_type}')
+    print(f'Debugging mode: {debug}')
+    print(f'Color correction: {color_correction}')
+    if color_correction:
+        print(f'Temperature: {temperature} K')
+
+    if average_type == 'COMPLEX':
+        use_complex = True
+    elif average_type == 'ABSOLUTE':
+        use_complex = False
+    else:
+        raise ValueError(f'Cannot recognize the average_type ({average_type})!')
 
     if len(fits_file_list) == 0:
         print('No FITS files found.')
         sys.exit()
 
-    if plot:
-        pdf = PdfPages(f'bandpass_{extver}_{fiber_type}.pdf')
-
-    bpList = []
-    for loop, f in tqdm.tqdm(enumerate(fits_file_list)):
-        fn = f.split('/')[-1][:-5]
-
-        if fiber_type == 'SC':
-            wave, bp = Bandpass_SC(f, extver=extver, wave_range=wave_range, 
-                                   wnum_step=wnum_step, plot=plot)
+    print(f'Found {len(fits_file_list)} files:')
+    for loop, f in enumerate(fits_file_list):
+        print(f'  {f}')
+        if loop == 0:
+            header = fits.getheader(f, ext=0)
+            pol = header['ESO INS POLA MODE']
+            res = header['ESO INS SPEC RES']
         else:
-            wave, bp = Bandpass_FT(f, extver=extver, wave_range=wave_range, 
-                                   wnum_step=wnum_step, plot=plot)
-        if plot:
-            pdf.savefig()
-            plt.close()
+            header = fits.getheader(f, ext=0)
+            if pol != header['ESO INS POLA MODE']:
+                raise ValueError('The polarization mode is different!')
+            if res != header['ESO INS SPEC RES']:
+                raise ValueError('The spectral resolution is different!')
 
-        if bp is not None:
+    if plot:
+        pdf = PdfPages(f'bandpass_{fiber_type}.pdf')
+
+    if pol == 'SPLIT':
+        bp1List = []
+        bp2List = []
+        for loop, f in tqdm.tqdm(enumerate(fits_file_list)):
+            fn = f.split('/')[-1][:-5]
+
+            if fiber_type == 'SC':
+                wave, bp1 = Bandpass_SC(
+                    f, extver=11, wave_range=wave_range, wnum_step=wnum_step, 
+                    return_complex=use_complex, plot=plot, page_size=page_size)
+                if plot:
+                    pdf.savefig(bbox_inches='tight')
+                    plt.close()
+
+                _, bp2 = Bandpass_SC(
+                    f, extver=12, wave_range=wave_range, wnum_step=wnum_step, 
+                    return_complex=use_complex, plot=plot, page_size=page_size)
+                if plot:
+                    pdf.savefig(bbox_inches='tight')
+                    plt.close()
+
+            else:
+                wave, bp1 = Bandpass_FT(
+                    f, extver=21, wave_range=wave_range, wnum_step=wnum_step, 
+                    return_complex=use_complex, plot=plot, page_size=page_size, )
+                if plot:
+                    pdf.savefig(bbox_inches='tight')
+                    plt.close()
+
+                _, bp2 = Bandpass_FT(
+                    f, extver=22, wave_range=wave_range, wnum_step=wnum_step, 
+                    return_complex=use_complex, plot=plot, page_size=page_size)
+                if plot:
+                    pdf.savefig(bbox_inches='tight')
+                    plt.close()
+
+            bp1List.append(bp1)
+            bp2List.append(bp2)
+        bp1List = np.array(bp1List)
+        bp2List = np.array(bp2List)
+
+        # Calculate the average bandpass
+        bp_ave_all = np.absolute(np.nanmean(np.concatenate([bp1List, bp2List]), axis=(0, 2)))
+        
+        if color_correction:
+            bp_ave_all = correct_lampspec(wave, bp_ave_all, temperature)
+        
+        bp_ave_all /= np.max(bp_ave_all, axis=0, keepdims=True)
+        
+        if debug:
+            bp_ave_bsl_1 = np.absolute(np.nanmean(bp1List, axis=0))
+            bp_ave_bsl_2 = np.absolute(np.nanmean(bp2List, axis=0))
+            bp_ave_all_1 = np.absolute(np.nanmean(bp1List, axis=(0, 2)))
+            bp_ave_all_2 = np.absolute(np.nanmean(bp2List, axis=(0, 2)))
+
+            if color_correction:
+                # Correct the lamp spectrum
+                bp_ave_bsl_1 = correct_lampspec(wave, bp_ave_bsl_1, temperature)
+                bp_ave_bsl_2 = correct_lampspec(wave, bp_ave_bsl_2, temperature)
+                bp_ave_all_1 = correct_lampspec(wave, bp_ave_all_1, temperature)
+                bp_ave_all_2 = correct_lampspec(wave, bp_ave_all_2, temperature)
+
+            bp_ave_bsl_1 /= np.max(bp_ave_bsl_1, axis=0, keepdims=True)
+            bp_ave_bsl_2 /= np.max(bp_ave_bsl_2, axis=0, keepdims=True)
+            bp_ave_all_1 /= np.max(bp_ave_all_1, axis=0, keepdims=True)
+            bp_ave_all_2 /= np.max(bp_ave_all_2, axis=0, keepdims=True)
+
+    elif pol == 'COMBINED':
+        bpList = []
+        for loop, f in tqdm.tqdm(enumerate(fits_file_list)):
+            fn = f.split('/')[-1][:-5]
+
+            if fiber_type == 'SC':
+                wave, bp = Bandpass_SC(
+                    f, extver=10, wave_range=wave_range, wnum_step=wnum_step, 
+                    return_complex=use_complex, plot=plot, page_size=page_size)
+                if plot:
+                    pdf.savefig(bbox_inches='tight')
+                    plt.close()
+
+            else:
+                wave, bp = Bandpass_FT(
+                    f, extver=20, wave_range=wave_range, wnum_step=wnum_step, 
+                    return_complex=use_complex, plot=plot, page_size=page_size)
+                if plot:
+                    pdf.savefig(bbox_inches='tight')
+                    plt.close()
+
             bpList.append(bp)
+        bpList = np.array(bpList)
     
-    if len(bpList) == 0:
-        print('No bandpass derived!')
+        # Calculate the average bandpass
+        bp_ave_all = np.absolute(np.nanmean(bpList, axis=(0, 2)))
 
-        if plot:
-            pdf.close()
+        if color_correction:
+            # Correct the lamp spectrum
+            bp_ave_all = correct_lampspec(wave, bp_ave_all, temperature)
         
-        sys.exit()
-        
-    # Calculate the average bandpass
-    nchn = len(wave)
-    bp_ave_bsl = np.nanmean(bpList, axis=0)
-    bp_ave_all = np.nanmean(bp_ave_bsl, axis=1)
+        bp_ave_all /= np.max(bp_ave_all, axis=0, keepdims=True)
 
-    # Correct the lamp spectrum
-    bp_cor_bsl = correct_lampspec(wave, bp_ave_bsl, temperature)
-    bp_cor_all = np.nanmean(bp_cor_bsl, axis=1)
+        if debug:
+            bp_ave_bsl = np.absolute(np.nanmean(bpList, axis=0))
 
+            if color_correction:
+                # Correct the lamp spectrum
+                bp_ave_bsl = correct_lampspec(wave, bp_ave_bsl, temperature)
+            
+            bp_ave_bsl /= np.max(bp_ave_bsl, axis=0, keepdims=True)
+    else:
+        raise ValueError(f'Cannot recognize the polarization ({pol})!')
 
     # Save the output
     hdr = fits.Header()
+    hdr['ESO INS POLA MODE'] = pol
+    hdr['ESO INS SPEC RES'] = res
+    hdr['CHANNEL'] = (f'{fiber_type}', 'SC or FT Channel')
+    hdr['TYPAVG'] = (f'{average_type}', 'Average type, COMPLEX or ABSOLUTE')
+    hdr['CLCORR'] = (f'{color_correction}', 'If applied color correction')
+    hdr['TEMPBB'] = (f'{temperature}', 'Lamp blackbody temperature (K)')
+
     hduList = [fits.PrimaryHDU([1], header=hdr),
                fits.BinTableHDU.from_columns(
                    [fits.Column(name='WAVELENGTH', format='D', array=wave),
-                    fits.Column(name='MEAS_TRANS', format=f'{bp_ave_all.shape[-1]}D', array=bp_ave_all),
-                    fits.Column(name='EFF_TRANS', format=f'{bp_cor_all.shape[-1]}D', array=bp_cor_all)
-                    ]),
-               fits.ImageHDU(name='MEAS_TRANS_BSL', data=bp_ave_bsl),
-               fits.ImageHDU(name='EFF_TRANS_BSL', data=bp_ave_bsl)]
-    hduList[1].header['EXTNAME'] = 'EFF_TRANS'
-    hduList[1].header['TEMPBB'] = (f'{temperature}', 'Lamp blackbody temperature (K)')
-    hduList[1].header['TTYPE2'] = ('MEAS_TRANS', 'Measured bandpass including lamp spectrum')
-    hduList[1].header['TTYPE3'] = ('EFF_TRANS', 'Effective bandpass without lamp spectrum')
-    hduList[2].header['EXTNAME'] = ('MEAS_TRANS_BSL', 'Measured bandpass per baseline, no correction')
-    hduList[3].header['EXTNAME'] = ('EFF_TRANS_BSL', 'Effective bandpass per baseline')
+                    fits.Column(name='EFF_TRANS', format=f'{bp_ave_all.shape[-1]}D', array=bp_ave_all)])]
+
+    hduList[1].header['EXTNAME'] = 'OI_BANDPATH'
+    hduList[1].header['TTYPE1'] = ('WAVELENGTH', 'Wavelength of effective transmission curves')
+    hduList[1].header['TTYPE2'] = ('EFF_TRANS', 'Averaged effective transmission over all baselines and polarization')
+
+    if debug:
+        hduList[0].header['DEBUG'] = (True, 'Debugging mode')
+
+        if pol == 'SPLIT':
+            hduList += [fits.BinTableHDU.from_columns(
+                           [fits.Column(name='EFF_TRANS_1', format=f'{bp_ave_all_1.shape[-1]}D', array=bp_ave_all_1),
+                            fits.Column(name='EFF_TRANS_2', format=f'{bp_ave_all_2.shape[-1]}D', array=bp_ave_all_2)]),
+                       fits.ImageHDU(name='EFF_TRANS_1', data=bp_ave_bsl_1),
+                       fits.ImageHDU(name='EFF_TRANS_2', data=bp_ave_bsl_2)]
+            hduList[2].header['EXTNAME'] = 'BP_POL'
+            hduList[2].header['TTYPE1'] = ('BP_POL_1', 'Averaged bandpass in polarization 1')
+            hduList[2].header['TTYPE2'] = ('BP_POL_2', 'Averaged bandpass in polarization 2')
+            hduList[3].header['EXTNAME'] = ('BP_POL_BSL_1', 'Bandpass per baseline in polarization 1')
+            hduList[4].header['EXTNAME'] = ('BP_POL_BSL_2', 'Bandpass per baseline in polarization 2')
+
+        else:
+            hduList.append(fits.ImageHDU(name='BP_BSL', data=bp_ave_bsl))
+            hduList[2].header['EXTNAME'] = ('BP_BSL', 'Bandpass per baseline')
+
+    hduList[0].header['HISTORY'] = f'Reduced the following {len(fits_file_list)} files'
+    for f in fits_file_list:
+        hduList[0].header['HISTORY'] = f
+
     hdul = fits.HDUList(hduList)
-    hdul.writeto(f'bandpass_{extver}_{fiber_type}.fits', overwrite=True)
+    hdul.writeto(f'bandpass_{fiber_type}.fits', overwrite=True)
 
     if plot:
-        fig, axs = plt.subplots(6, 1, figsize=(8, 12), sharex=True, sharey=True)
-        fig.subplots_adjust(hspace=0)
-        axo = fig.add_subplot(111, frameon=False) # The out axis
-        axo.tick_params(axis='y', which='both', left=False, labelleft=False)
-        axo.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
-        axo.set_xlabel(r"Wavelength ($\mu$m)", fontsize=24, labelpad=20)
-        axo.set_ylabel(r"Measured bandpass", fontsize=24, labelpad=32) #
-        axo.set_title(r'Averaged bandpass per baseline', fontsize=14, pad=30, color='gray')
+        if pol == 'SPLIT':
+            colors = plt.cm.coolwarm(np.linspace(0, 1, bp1List.shape[-1]))
+
+            # Plot the complex bandpass for each channel
+            for chn in range(bp1List.shape[-1]):
+                fig, axs = plt.subplots(6, 2, figsize=page_size, sharex=True, sharey=True)
+                fig.subplots_adjust(hspace=0, wspace=0.05)
+                axo = fig.add_subplot(111, frameon=False) # The out axis
+                axo.tick_params(axis='y', which='both', left=False, labelleft=False)
+                axo.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+                axo.set_xlabel(r"Wavelength ($\mu$m)", fontsize=24, labelpad=20)
+                axo.set_ylabel(fr"Complex bandpass", fontsize=24, labelpad=32) #
+                axo.set_title(f'Complex bandpass of channel {chn}', fontsize=14, pad=30, color='gray')
+
+                for bsl, (ax1, ax2) in enumerate(axs):
+                    for ii in range(bp1List.shape[0]):
+                        if ii == 0:
+                            l1 = 'Real'
+                            l2 = 'Imag'
+                        else:
+                            l1 = None
+                            l2 = None
+
+                        ax1.plot(wave, bp1List[ii, :, bsl, chn].real, c='C0', lw=0.5, label=l1)
+                        ax1.plot(wave, bp1List[ii, :, bsl, chn].imag, c='C3', lw=0.5, label=l2)
+                        ax2.plot(wave, bp2List[ii, :, bsl, chn].real, c='C0', lw=0.5)
+                        ax2.plot(wave, bp2List[ii, :, bsl, chn].imag, c='C3', lw=0.5)
+                    ax1.text(0.01, 0.95, baseline_name[bsl], transform=ax1.transAxes, 
+                             fontsize=16, ha='left', va='top')
+                axs[0, 0].set_title('P11', fontsize=14)
+                axs[0, 1].set_title('P12', fontsize=14)
+                axs[0, 0].legend(loc='lower right', fontsize=12, ncols=2)
+                ax1.set_ylim([-1.1, 1.1])
+                ax1.minorticks_on()
+                ax2.minorticks_on()
+
+                pdf.savefig(bbox_inches='tight')
+                plt.close()
+
+
+            if debug:
+                # Plot the averaged bandpass for each baseline
+                fig, axs = plt.subplots(6, 2, figsize=page_size, sharex=True, sharey=True)
+                fig.subplots_adjust(hspace=0, wspace=0.05)
+                axo = fig.add_subplot(111, frameon=False) # The out axis
+                axo.tick_params(axis='y', which='both', left=False, labelleft=False)
+                axo.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+                axo.set_xlabel(r"Wavelength ($\mu$m)", fontsize=24, labelpad=20)
+                axo.set_title(r'Averaged bandpass per baseline', fontsize=14, pad=30, color='gray')
+            
+                if color_correction:
+                    axo.set_ylabel(fr"Bandpass (T={temperature} $K$)", fontsize=24, labelpad=32) #
+                else:
+                    axo.set_ylabel(fr"Bandpass (no correction)", fontsize=24, labelpad=32) #
         
-        for ii, ax in enumerate(axs):
-            for nc in range(bp_ave_bsl.shape[-1]):
-                b = bp_ave_bsl[:, ii, nc]
-                ax.plot(wave, b, label=f'ch{nc}', marker='.')
-            ax.text(0.01, 0.95, baseline_name[ii], transform=ax.transAxes, 
-                    fontsize=16, ha='left', va='top')
-        ax.minorticks_on()
-        ax.set_ylim(-0.1, 1.1)
-        pdf.savefig()
-        plt.close()
+                for ii in range(6):
+                    for nc in range(bp_ave_bsl_1.shape[-1]):
+                        axs[ii, 0].plot(wave, bp_ave_bsl_1[:, ii, nc], color=colors[nc], label=f'ch{nc}')
+                        axs[ii, 1].plot(wave, bp_ave_bsl_2[:, ii, nc], color=colors[nc], label=f'ch{nc}')
+                    axs[ii, 0].text(0.01, 0.95, baseline_name[ii], transform=axs[ii, 0].transAxes, 
+                            fontsize=16, ha='left', va='top')
+                axs[0, 0].set_title(r'P11', fontsize=20)
+                axs[0, 1].set_title(r'P12', fontsize=20)
+                axs[0, 0].minorticks_on()
+                axs[0, 0].set_ylim(-0.1, 1.1)
 
-        fig, axs = plt.subplots(2, 1, figsize=(8, 12), sharex=True, sharey=True)
-        fig.subplots_adjust(hspace=0)
-        axo = fig.add_subplot(111, frameon=False) # The out axis
-        axo.tick_params(axis='y', which='both', left=False, labelleft=False)
-        axo.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
-        axo.set_xlabel(r"Wavelength ($\mu$m)", fontsize=24, labelpad=20)
-        axo.set_title(r'Averaged bandpass', fontsize=14, pad=30, color='gray')
+                pdf.savefig(bbox_inches='tight')
+                plt.close()
 
-        ax = axs[0]
-        for nc in range(bp_ave_all.shape[-1]):
-            b = bp_ave_all[:, nc]
-            ax.plot(wave, b, label=f'ch{nc}', marker='.')
-        ax.set_ylabel(r"Measured bandpass", fontsize=24) #
+
+                # Plot the averaged bandpass for all baselines
+                fig, axs = plt.subplots(2, 1, figsize=page_size, sharex=True, sharey=True)
+                fig.subplots_adjust(hspace=0)
+                axo = fig.add_subplot(111, frameon=False) # The out axis
+                axo.tick_params(axis='y', which='both', left=False, labelleft=False)
+                axo.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+                axo.set_xlabel(r"Wavelength ($\mu$m)", fontsize=24, labelpad=20)
+
+                if color_correction:
+                    axo.set_title(fr'Averaged bandpass (T={temperature} $K$)', fontsize=14, pad=30, color='gray')
+                else:
+                    axo.set_title(r'Averaged bandpass (no correction)', fontsize=14, pad=30, color='gray')
+    
+                ax = axs[0]
+                for nc in range(bp_ave_all_1.shape[-1]):
+                    b = bp_ave_all_1[:, nc]
+                    ax.plot(wave, b, color=colors[nc], label=f'ch{nc}')
+                ax.axhline(y=0, ls='--', lw=0.5, color='k', zorder=4)
+                ax.set_ylabel(r"P11", fontsize=24) #
+            
+                ax = axs[1]
+                for nc in range(bp_ave_all_2.shape[-1]):
+                    b = bp_ave_all_2[:, nc]
+                    ax.plot(wave, b, color=colors[nc], label=f'ch{nc}')
+                ax.set_ylabel(fr"P12", fontsize=24) #
+                ax.axhline(y=0, ls='--', lw=0.5, color='k', zorder=4)
+    
+                ax.minorticks_on()
+                pdf.savefig(bbox_inches='tight')
+                plt.close()
+                
+            # Plot the averaged bandpass for all baselines
+            fig, ax = plt.subplots(figsize=page_size, sharex=True, sharey=True)
+
+            if color_correction:
+                axo.set_title(fr'Averaged bandpass (T={temperature} $K$)', fontsize=14, pad=30, color='gray')
+            else:
+                axo.set_title(r'Averaged bandpass (no correction)', fontsize=14, pad=30, color='gray')
+    
+            for nc in range(bp_ave_all.shape[-1]):
+                b = bp_ave_all[:, nc]
+                ax.plot(wave, b, color=colors[nc], label=f'ch{nc}')
+            ax.axhline(y=0, ls='--', lw=0.5, color='k', zorder=4)
+            ax.set_xlabel(r"Wavelength ($\mu$m)", fontsize=24, labelpad=20)
+            ax.set_ylabel(r"Bandpass", fontsize=24) #
+    
+            ax.minorticks_on()
+            pdf.savefig(bbox_inches='tight')
+            plt.close()
+    
+        else:
+            colors = plt.cm.coolwarm(np.linspace(0, 1, bpList.shape[-1]))
+
+            # Plot the complex bandpass for each channel
+            for chn in range(bpList.shape[-1]):
+                fig, axs = plt.subplots(6, 1, figsize=page_size, sharex=True, sharey=True)
+                fig.subplots_adjust(hspace=0, wspace=0.05)
+                axo = fig.add_subplot(111, frameon=False) # The out axis
+                axo.tick_params(axis='y', which='both', left=False, labelleft=False)
+                axo.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+                axo.set_xlabel(r"Wavelength ($\mu$m)", fontsize=24, labelpad=20)
+                axo.set_ylabel(fr"Complex bandpass", fontsize=24, labelpad=32) #
+                axo.set_title(f'Complex bandpass of channel {chn}', fontsize=14, pad=30, color='gray')
+
+                for bsl, ax in enumerate(axs):
+                    for ii in range(bpList.shape[0]):
+                        if ii == 0:
+                            l1 = 'Real'
+                            l2 = 'Imag'
+                        else:
+                            l1 = None
+                            l2 = None
+
+                        ax.plot(wave, bpList[ii, :, bsl, chn].real, c='C0', lw=0.5, label=l1)
+                        ax.plot(wave, bpList[ii, :, bsl, chn].imag, c='C3', lw=0.5, label=l2)
+                    ax.text(0.01, 0.95, baseline_name[bsl], transform=ax.transAxes, 
+                             fontsize=16, ha='left', va='top')
+                axs[0].legend(loc='lower right', fontsize=12, ncols=2)
+                ax.set_ylim([-1.1, 1.1])
+                ax.minorticks_on()
+
+                pdf.savefig(bbox_inches='tight')
+                plt.close()
+
+            if debug:
+                # Plot the averaged bandpass for each baseline
+                fig, axs = plt.subplots(6, 1, figsize=page_size, sharex=True, sharey=True)
+                fig.subplots_adjust(hspace=0)
+                axo = fig.add_subplot(111, frameon=False) # The out axis
+                axo.tick_params(axis='y', which='both', left=False, labelleft=False)
+                axo.tick_params(axis='x', which='both', bottom=False, labelbottom=False)
+                axo.set_xlabel(r"Wavelength ($\mu$m)", fontsize=24, labelpad=20)
+                axo.set_ylabel(r"Measured bandpass", fontsize=24, labelpad=32) #
+                axo.set_title(r'Averaged bandpass per baseline', fontsize=14, pad=30, color='gray')
         
-        ax = axs[1]
-        for nc in range(bp_cor_all.shape[-1]):
-            b = bp_cor_all[:, nc]
-            ax.plot(wave, b, label=f'ch{nc}', marker='.')
-        ax.set_ylabel(fr"Effective bandpass ({temperature:.0f} K)", fontsize=24) #
+                for ii, ax in enumerate(axs):
+                    for nc in range(bp_ave_bsl.shape[-1]):
+                        b = bp_ave_bsl[:, ii, nc]
+                        ax.plot(wave, b, color=colors[nc], label=f'ch{nc}')
+                    ax.text(0.01, 0.95, baseline_name[ii], transform=ax.transAxes, 
+                            fontsize=16, ha='left', va='top')
+                ax.minorticks_on()
+                ax.set_ylim(-0.1, 1.1)
 
-        ax.minorticks_on()
-        pdf.savefig()
-        plt.close()
+                pdf.savefig(bbox_inches='tight')
+                plt.close()
 
+            # Plot the averaged bandpass for all baselines
+            fig, ax = plt.subplots(figsize=page_size, sharex=True, sharey=True)
+            ax.set_xlabel(r"Wavelength ($\mu$m)", fontsize=24, labelpad=20)
+            
+            if color_correction:
+                ax.set_title(fr'Averaged bandpass (T={temperature} $K$)', fontsize=14, pad=30, color='gray')
+            else:
+                ax.set_title(r'Averaged bandpass (no correction)', fontsize=14, pad=30, color='gray')
+    
+            for nc in range(bp_ave_all.shape[-1]):
+                b = bp_ave_all[:, nc]
+                ax.plot(wave, b, color=colors[nc], label=f'ch{nc}')
+            ax.axhline(y=0, ls='--', lw=0.5, color='k', zorder=4)
+            ax.set_ylabel(r"Measured bandpass", fontsize=24) #
+            
+            ax.minorticks_on()
+            pdf.savefig(bbox_inches='tight')
+            plt.close(fig)
+    
         pdf.close()
+    
